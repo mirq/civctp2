@@ -207,7 +207,13 @@ static uint32 CompressData(uint8 *inbuf, size_t insize,
 
 	*outbuf = new uint8[tsize];
 
+#if defined(CTP2_AMIGA_BUILD)
+	// The fastest level: the default one took 1.7 s of every turn's autosave
+	// on a 68060 (650 KB). The file is a little bigger and reads the same.
+	int err = compress2(*outbuf, &tsize, inbuf, static_cast<uLong>(insize), Z_BEST_SPEED);
+#else
 	int err = compress2(*outbuf, &tsize, inbuf, static_cast<uLong>(insize), Z_DEFAULT_COMPRESSION);
+#endif
 	*outsize = tsize;
 
 	return (err == Z_OK);

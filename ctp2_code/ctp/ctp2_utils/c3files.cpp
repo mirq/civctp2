@@ -47,9 +47,9 @@
 #include "pointerlist.h"
 #include "profileDB.h"
 #include "soundmanager.h"
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 #include "tracklen.h"
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 #ifdef HAVE_STRING_H
 #include <string.h>
 #endif
@@ -85,7 +85,7 @@
 
 extern C3UI *       g_c3ui;
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 
 namespace
 {
@@ -108,7 +108,7 @@ namespace
 
 #define k_CTP_CD_VOLUME_NAME		"CTP2"
 
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 
 FILE* c3files_fopen(C3DIR dirID, MBCHAR const * s1, MBCHAR const * s2, bool checkScenario)
 {
@@ -510,7 +510,7 @@ const MBCHAR *c3files_GetCTPHomeDir()
 		return NULL;
 }
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 
 bool c3files_HasLegalCD()
 {
@@ -710,4 +710,4 @@ bool c3files_FindCDByName(MBCHAR const * name)
 
 } // local namespace
 
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD

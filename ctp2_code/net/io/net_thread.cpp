@@ -167,6 +167,9 @@ NetThread::~NetThread()
 static int NetThread_StartThread(void *obj)
 #elif defined(WIN32)
 DWORD WINAPI NetThread_StartThread(LPVOID obj)
+#elif defined(CTP2_AMIGA_BUILD)
+// No multiplayer on the Amiga: the thread is never started (Init).
+static int NetThread_StartThread(void *obj)
 #else
 #error "Threading not implemented."
 #endif
@@ -191,7 +194,7 @@ NetThread::NetThread()
 
 #if defined(__AUI_USE_SDL__)
 	m_mutex = SDL_CreateMutex();
-#elif defined(WIN32)
+#else
 	InitializeCriticalSection(&m_mutex);
 #endif
 	m_setMaxPlayers = -1;
@@ -211,6 +214,9 @@ NET_ERR NetThread::Init(NetIOResponse *response)
 									  this,
 									  0,
 									  &m_threadId)) == NULL) {
+#else
+	{
+		(void) NetThread_StartThread;
 #endif
 		DPRINTF(k_DBG_NET, ("Failed to start thread\n"));
 	}

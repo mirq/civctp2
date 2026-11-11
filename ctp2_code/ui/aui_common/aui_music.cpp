@@ -60,7 +60,7 @@ aui_Music::SetVolume( uint8 volume )
 	return AUI_MUSIC_ERRCODE_OK;
 }
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 
 aui_Redbook::aui_Redbook() :
 m_cd_device_id(-1),
@@ -361,4 +361,4 @@ aui_Redbook::Status()
 	return AUI_MUSIC_CODE_UNKNOWN;
 }
 
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD

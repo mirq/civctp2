@@ -35,6 +35,9 @@
 #include "aui_uniqueid.h"
 #include "c3_static.h"
 #include "c3ui.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_log, amiga_ticks_ms
+#endif
 
 extern C3UI *   g_c3ui;
 
@@ -85,6 +88,16 @@ void ProgressWindow::BeginProgress(
 
 void ProgressWindow::StartCountingTo( sint32 val, MBCHAR const * message )
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// The loading steps and how long the one before took (ctp2.log).
+	{
+		static uint32 s_last = 0;
+		uint32 const  now    = amiga_ticks_ms();
+		amiga_log("Progress %ld (%s): %lu ms since the last\n", (long)val,
+		          message ? message : "", (unsigned long)(s_last ? now - s_last : 0));
+		s_last = now;
+	}
+#endif
 	if ( message )
 	{
 		m_message->SetText( message );

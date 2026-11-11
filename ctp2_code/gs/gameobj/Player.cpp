@@ -2477,6 +2477,10 @@ void Player::EndTurn()
 
 	if(g_controlPanel)
 	{
+#if defined(CTP2_AMIGA_BUILD)
+		// As in BeginTurn (PlayerTurn.cpp): only for the player at the screen.
+		if (m_owner == g_selected_item->GetVisiblePlayer())
+#endif
 		g_controlPanel->GetWindow()->DrawChildren();
 	}
 

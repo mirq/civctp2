@@ -148,7 +148,7 @@ protected:
 	size_t  m_selEnd;
 	size_t  m_viewStart;
 
-#if defined(__AUI_USE_SDL__)
+#if (defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__))
 	size_t GetInvisibleNumToSelStart();
 	void UpdateView();
 #endif
@@ -167,7 +167,7 @@ public:
 	virtual void	MouseLGrabOutside(aui_MouseEvent * mouseData);
 	virtual void	PostChildrenCallback(aui_MouseEvent * mouseData);
 
-#if defined(__AUI_USE_SDL__)
+#if (defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__))
 	void SelectWordStart();
 	void SelectWordEnd();
 

@@ -123,8 +123,11 @@
 #include "aui.h"
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(CTP2_AMIGA_BUILD)
 // try to handle Case insisentive stuff globaly here
+// (on the Amiga, the file systems ignore case already; CI_FixName there
+// turns the game's POSIX-style relative paths into AmigaDOS ones:
+// os/amiga/amiga_posix.c)
 #include "cifm.h"
 #define fopen(a, b) ci_fopen(a, b)
 #endif

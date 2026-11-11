@@ -1,0 +1,95 @@
+# Call to Power II for a 68060 Amiga with an RTG card (Picasso96/CyberGraphX).
+#
+#   make -f Makefile.amiga68k -j$(nproc)      -> bin/amiga/ctp2.060
+#
+# Built by Bebbo's m68k-amigaos-gcc 6.5 with libnix (-noixemul), which writes
+# the hunk executable itself. The generated sources (database records, SLIC
+# and LDL parsers) come from the host step in ctp2_code/os/amiga/gen.mk, shared
+# with Makefile.warpos. The platform code is ctp2_code/os/amiga and
+# ctp2_code/ui/aui_amiga, also shared; CTP2_AMIGA_060 marks what only the
+# 68060 does (the clock, the waits).
+
+PREFIX ?= /opt/amiga
+CROSS  ?= $(PREFIX)/bin/m68k-amigaos-
+CC     := $(CROSS)gcc
+CXX    := $(CROSS)g++
+CPU    ?= 68060
+
+SHELL := /bin/bash
+
+CTP2   := ctp2_code
+GEN    := build/amiga-gen
+OBJDIR := build/amiga68k
+TARGET := bin/amiga/ctp2.060
+
+.DEFAULT_GOAL := all
+
+include $(CTP2)/os/amiga/gen.mk
+include $(CTP2)/os/amiga/sources.mk
+include $(CTP2)/os/amiga/common.mk
+
+# -m68060 -mhard-float: a full 68060 (an LC060 has no FPU and is no target).
+# -fno-peephole2 -fbbb=-: NOT optional. This gcc (6.5.0b) merges a word clear
+#   and the long clear after it into one long clear, in its peephole2 patterns
+#   and in Bebbo's backend optimiser; each flag alone fixes some cases and not
+#   others (OpenSWOS docs/RTG060.md, "The compiler").
+# -fomit-frame-pointer: one more address register for the 68060.
+ARCH_FLAGS := -m$(CPU) -mhard-float -noixemul
+OPT_FLAGS  ?= -O2 -fno-peephole2 -fbbb=- -fomit-frame-pointer
+
+AMIGA_DEFS += -DCTP2_AMIGA_060=1
+
+CFLAGS   := $(ARCH_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) $(AMIGA_INCS) $(AMIGA_C_FLAGS) $(EXTRA_CFLAGS)
+CXXFLAGS := $(ARCH_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) $(AMIGA_INCS) $(AMIGA_CXX_FLAGS) $(EXTRA_CXXFLAGS)
+
+# -u ___stkswap: libnix's swapstack.o gives main() the stack __stack asks for
+# (os/amiga/amiga_main.cpp); nothing else would pull it into the link.
+# --wrap=fopen: every fopen goes through os/amiga/amiga_posix.c, which makes
+#   the name an AmigaDOS one (c3.h's fopen macro is undone by <cstdio>).
+LDFLAGS := $(ARCH_FLAGS) -Wl,-u,___stkswap -Wl,--wrap=fopen $(EXTRA_LDFLAGS)
+LIBS    := -lm
+
+# A changed flag rebuilds every object.
+BUILD_FLAGS_STAMP := $(OBJDIR)/.build-flags
+$(shell mkdir -p $(OBJDIR); f='$(CXXFLAGS) $(CFLAGS)'; [ "$$(cat $(BUILD_FLAGS_STAMP) 2>/dev/null)" = "$$f" ] || printf '%s' "$$f" > $(BUILD_FLAGS_STAMP))
+
+.PHONY: all objects clean
+all: $(TARGET)
+objects: $(AMIGA_OBJECTS)
+
+$(OBJDIR)/%.o: $(CTP2)/%.cpp $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) $(AMIGA_FILE_FLAGS_$*) -c $< -o $@
+
+$(OBJDIR)/%.o: $(CTP2)/%.c $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) $(CFLAGS) $(AMIGA_FILE_FLAGS_$*) -c $< -o $@
+
+$(OBJDIR)/gen/%.o: $(GEN)/%.cpp $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/gen/%.o: $(GEN)/%.c $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+# The full link with its symbols stays beside the objects for addr2line
+# against a crash address; bin/ gets it stripped.
+DEBUG_EXE := $(OBJDIR)/ctp2.debug
+
+$(DEBUG_EXE): $(AMIGA_OBJECTS)
+	@echo "  LD  $@"
+	@$(CXX) -g -o $@ $(AMIGA_OBJECTS) $(LDFLAGS) $(LIBS)
+
+$(TARGET): $(DEBUG_EXE)
+	@mkdir -p $(dir $@)
+	@$(CROSS)strip -o $@ $<
+
+clean:
+	rm -rf $(OBJDIR) $(TARGET)
+
+-include $(AMIGA_OBJECTS:.o=.d)

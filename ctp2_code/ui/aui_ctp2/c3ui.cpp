@@ -66,6 +66,8 @@ C3UI::C3UI
 :
 #if defined(__AUI_USE_SDL__)
 	aui_SDLUI(retval, hinst, hwnd, width, height, bpp, ldlFilename, useExclusiveMode),
+#elif defined(__AUI_USE_AMIGA__)
+	aui_AmigaUI(retval, hinst, hwnd, width, height, bpp, ldlFilename, useExclusiveMode),
 #else
 	aui_DirectUI(retval, hinst, hwnd, width, height, bpp, ldlFilename, useExclusiveMode),
 #endif

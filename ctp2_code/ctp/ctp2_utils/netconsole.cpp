@@ -28,7 +28,9 @@
 #include "c3.h"
 #include "netconsole.h"
 #include "c3cmdline.h"
-#if defined(WIN32)
+#if defined(CTP2_AMIGA_BUILD)
+// No sockets on the Amiga builds: the console is never opened.
+#elif defined(WIN32)
 #include <winsock.h>
 #elif defined(LINUX)
 #include <sys/types.h>
@@ -47,8 +49,10 @@ NetConsole *g_netConsole = NULL;
 
 void netconsole_Initialize()
 {
+#if !defined(CTP2_AMIGA_BUILD)
 	if(!g_netConsole)
 		g_netConsole = new NetConsole(9999);
+#endif
 }
 
 void netconsole_Cleanup()
@@ -58,6 +62,33 @@ void netconsole_Cleanup()
 		g_netConsole = NULL;
 	}
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+
+NetConsole::NetConsole(uint16 port)
+:
+	m_listenSock(-1)
+{
+	for (sint32 i = 0; i < k_MAX_CONNECTIONS; i++) m_connections[i] = -1;
+}
+
+NetConsole::~NetConsole()
+{
+}
+
+void NetConsole::Idle()
+{
+}
+
+void NetConsole::Print(const char *fmt, ...)
+{
+}
+
+void NetConsole::Print(const char *fmt, va_list list)
+{
+}
+
+#else // CTP2_AMIGA_BUILD
 #if defined(WIN32)
 static void initWinsock()
 {
@@ -288,3 +319,5 @@ void NetConsole::Print(const char *fmt, va_list vl)
 		}
 	}
 }
+
+#endif // CTP2_AMIGA_BUILD

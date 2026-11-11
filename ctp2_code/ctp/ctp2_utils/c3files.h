@@ -154,7 +154,7 @@ bool		c3files_getfilelist_ex(C3SAVEDIR dirID, MBCHAR *ext, PointerList<WIN32_FIN
  */
 const MBCHAR *c3files_GetCTPHomeDir();
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 bool		c3files_HasLegalCD(void);
 bool		c3files_HasCD(void);
 DriveIdType c3files_GetCtpCdId(void);

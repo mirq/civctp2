@@ -647,9 +647,9 @@ void loadsavescreen_LoadGame(void)
 	Assert(gameInfo);
 	if (!gameInfo) return;
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	if (!c3files_HasLegalCD()) return;
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 
 	if (SaveInfo * saveInfo = g_loadsaveWindow->GetSaveInfo())
 	{
@@ -812,11 +812,11 @@ void loadsavescreen_LoadMPGame(void)
 	}
 
 	// SAM042099 check for a valid CD-ROM before allowing a game to be loaded
-#if defined(USE_SDL)
+#if defined(CTP2_PORTABLE_BUILD)
 	bool legalGame = true;
-#else // USE_SDL
+#else // CTP2_PORTABLE_BUILD
 	bool legalGame = c3files_HasLegalCD();
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 	if ((!g_netfunc || g_netfunc->IsHost()) && !legalGame)
 		return;
 
@@ -916,10 +916,10 @@ void loadsavescreen_SaveMPGame(void)
 
 void loadsavescreen_LoadSCENGame(void)
 {
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	// SAM042099 check for a valid CD-ROM before allowing a game to be loaded
 	if (!c3files_HasLegalCD()) return;
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 
 	GameInfo	*gameInfo = g_loadsaveWindow->GetGameInfo();
 

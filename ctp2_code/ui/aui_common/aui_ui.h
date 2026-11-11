@@ -408,6 +408,11 @@ public:
 #ifdef __AUI_USE_SDL__
 	virtual AUI_ERRCODE SDLDrawScreen( void ) { return AUI_ERRCODE_OK; }
 #endif
+#ifdef __AUI_USE_AMIGA__
+	// Copies what changed on the primary surface since the last call to the
+	// RTG screen (ui/aui_amiga/aui_amigaui.cpp).
+	virtual AUI_ERRCODE AmigaDrawScreen( void ) { return AUI_ERRCODE_OK; }
+#endif
 
 protected:
 	AUI_ERRCODE	TagMouseEvents( sint32 numEvents, aui_MouseEvent *events );

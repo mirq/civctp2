@@ -31,8 +31,41 @@
 #include "c3.h"
 
 #include "tiffutils.h"
+
+#if defined(CTP2_AMIGA_BUILD)
+
+// No libtiff on the Amiga builds: the game's data has no TIFF images (they
+// are for modding: the sprite editor, tile sources). Every load fails.
+
+char *tiffutils_LoadTIF(char const *, uint16 *, uint16 *, size_t *)
+{
+	return NULL;
+}
+
+char *TIF2mem(char const *, uint16 *, uint16 *, size_t *)
+{
+	return NULL;
+}
+
+int TIFGetMetrics(char const *, uint16 *, uint16 *)
+{
+	return -1;
+}
+
+int TIFLoadIntoBuffer16(char const *, uint16 *, uint16 *, uint16, uint16 *, BOOL)
+{
+	return -1;
+}
+
+char *StripTIF2Mem(char const *, uint16 *, uint16 *, size_t *)
+{
+	return NULL;
+}
+
+#else // CTP2_AMIGA_BUILD
+
 #include <tiffio.h>
-#ifndef __linux__
+#if !defined(__linux__) && !defined(CTP2_AMIGA_BUILD)
 #define CI_FixName(a) a
 #endif
 
@@ -287,3 +320,4 @@ char *StripTIF2Mem(const char *filename, uint16 *width, uint16 *height, size_t *
 	return outBuf;
 }
 
+#endif // CTP2_AMIGA_BUILD

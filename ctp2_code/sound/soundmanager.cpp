@@ -57,7 +57,7 @@ extern PlayListDB	*g_thePlayListDB;
 
 SoundManager		*g_soundManager     = NULL;
 
-#ifndef __linux__
+#if !defined(__linux__) && !defined(CTP2_AMIGA_BUILD)
 #define CI_FixName(a) a
 #endif
 
@@ -66,9 +66,9 @@ namespace
 	uint32 const    k_CHECK_MUSIC_PERIOD = 4000;     // [ms]
 	uint32 const    SLIDER_FULL         = 10;
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	S32             s_masterVolume;
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 	sint32          s_startTrack        = 1;        // skip CD data track
 }
 
@@ -95,12 +95,12 @@ SoundManager::SoundManager()
 		m_oldRedbookVolume          (0),
 		m_noSound                   (false),
 		m_usePlaySound              (false),
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 		m_useOggTracks              (0),
 		m_oggTrack                  (0),
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 		m_redbook                   (0),
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 		m_timeToCheckMusic          (0),
 		m_numTracks                 (0),
 		m_curTrack                  (0),
@@ -148,7 +148,7 @@ void SoundManager::DumpAllSounds()
 
 void SoundManager::InitSoundDriver()
 {
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	int     use_digital     = 1;
 	int     use_MIDI        = 0;
 	int     output_rate     = 22050;	// 22khz @ 16 Bit stereo
@@ -170,7 +170,7 @@ void SoundManager::InitSoundDriver()
 	}
 
 	m_noSound = (errcode < 0);
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 	S32		use_digital     = 1;
 	S32		use_MIDI        = 0;
 	S32		output_rate     = 22050;	// 22khz @ 16 Bit stereo
@@ -178,7 +178,7 @@ void SoundManager::InitSoundDriver()
 	S32		output_channels = 2;
 
 	m_noSound = !AIL_quick_startup(use_digital, use_MIDI, output_rate, output_bits, output_channels);
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 
 	InitRedbook();
 
@@ -193,21 +193,21 @@ void SoundManager::CleanupSoundDriver()
 	{
 		CleanupRedbook();
 
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 		if (!m_noSound) {
 			Mix_CloseAudio();
 		}
 
 		SDL_QuitSubSystem(SDL_INIT_AUDIO);
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 		AIL_quick_shutdown();
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 	}
 }
 
 void SoundManager::InitRedbook()
 {
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	// check if Ogg Tracks are present first
 	if( !m_useOggTracks)
 	{
@@ -225,28 +225,28 @@ void SoundManager::InitRedbook()
 			printf("Detected Ogg Music track in app folder\n");
 		}
 	}
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 	if (!m_redbook)
 	{
 		m_redbook = AIL_redbook_open_drive(c3files_GetCtpCdId());
 	}
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 }
 
 void SoundManager::CleanupRedbook()
 {
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	if (m_oggTrack) {
 		Mix_FreeMusic(m_oggTrack);
 		m_oggTrack = NULL;
 	}
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 	if (m_redbook) {
 		AIL_redbook_stop(m_redbook);
 		AIL_redbook_close(m_redbook);
 		m_redbook = NULL;
 	}
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 }
 
 void SoundManager::ProcessRedbook()
@@ -257,7 +257,7 @@ void SoundManager::ProcessRedbook()
 
 	if (GetTickCount() > m_timeToCheckMusic) {
 
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 		if(m_useOggTracks) {
 			if(!Mix_PlayingMusic()) {
 				if (m_curTrack != -1)
@@ -267,7 +267,7 @@ void SoundManager::ProcessRedbook()
 					StartMusic(m_curTrack);
 			}
 		}
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 		U32 status;
 		if (m_redbook) {
 			status = AIL_redbook_status(m_redbook);
@@ -285,7 +285,7 @@ void SoundManager::ProcessRedbook()
 				break;
 			}
 		}
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 		m_timeToCheckMusic = GetTickCount() + k_CHECK_MUSIC_PERIOD;
 	}
 }
@@ -310,11 +310,11 @@ void SoundManager::Process(const uint32 &target_milliseconds,
 			if (!sound) continue;
 
 			if (sound->IsPlaying()) {
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 				if (!Mix_Playing(sound->GetChannel())) {
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 				if (AIL_quick_status(sound->GetHAudio()) == QSTAT_DONE) {
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 					m_soundWalker->Remove();
 
 					delete sound;
@@ -334,12 +334,12 @@ void SoundManager::Process(const uint32 &target_milliseconds,
 			if (!sound) continue;
 
 			if (sound->IsPlaying()) {
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 				if ((-1 == sound->GetChannel()) ||
 					(!Mix_Playing(sound->GetChannel()))) {
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 				if (AIL_quick_status(sound->GetHAudio()) == QSTAT_DONE) {
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 					m_soundWalker->Remove();
 					delete sound;
 				} else {
@@ -427,12 +427,12 @@ SoundManager::AddSound(const SOUNDTYPE &type,
 	}
 	else
 	{
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 		int channel = Mix_PlayChannel(-1, sound->GetAudio(), 0);
 		sound->SetChannel(channel);
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 		AIL_quick_play(sound->GetHAudio(), 1);
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 		sound->SetIsPlaying(TRUE);
 	}
 }
@@ -451,7 +451,7 @@ SoundManager::AddLoopingSound(const SOUNDTYPE &type,
 	}
 
 	CivSound *existingSound = FindLoopingSound(type, associatedObject);
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	if (existingSound && (existingSound->GetSoundID() == soundID) && (existingSound->GetChannel() != -1))
 #else
 	if (existingSound && (existingSound->GetSoundID() == soundID))
@@ -483,12 +483,12 @@ SoundManager::AddLoopingSound(const SOUNDTYPE &type,
 	}
 
 
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	int channel = Mix_PlayChannel(-1, sound->GetAudio(), -1);
 	sound->SetChannel(channel);
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 	AIL_quick_play(sound->GetHAudio(), 0);
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 
 	sound->SetIsLooping(TRUE);
 	sound->SetIsPlaying(TRUE);
@@ -502,7 +502,7 @@ SoundManager::TerminateLoopingSound(const SOUNDTYPE &type,
 
 	if (!existingSound) return;
 
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	int channel = existingSound->GetChannel();
 	if (channel >= 0) {
 		Mix_HaltChannel(channel);
@@ -535,15 +535,15 @@ SoundManager::TerminateAllLoopingSounds(const SOUNDTYPE &type)
 	while (node) {
 		sound = node->GetObj();
 		if (sound && sound->IsLooping()) {
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 			int channel = sound->GetChannel();
 			if (channel >= 0) {
 				Mix_HaltChannel(channel);
 			}
 			sound->SetChannel(-1);
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 			AIL_quick_halt(sound->GetHAudio());
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 		}
 		node = node->GetNext();
 	}
@@ -571,14 +571,14 @@ SoundManager::TerminateSounds(const SOUNDTYPE &type)
 	while (node) {
 		sound = node->GetObj();
 		if (sound) {
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 			int channel = sound->GetChannel();
 			if (channel >= 0) {
 				Mix_HaltChannel(channel);
 			}
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 			AIL_quick_halt(sound->GetHAudio());
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 		}
 		node = node->GetNext();
 	}
@@ -627,7 +627,7 @@ SoundManager::SetVolume(const SOUNDTYPE &type, const uint32 &volume)
 			break;
 		case SOUNDTYPE_MUSIC:
 			m_musicVolume = volume;
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 			if (m_useOggTracks)
 			{
 				// Assume max volume is 10...
@@ -641,10 +641,10 @@ SoundManager::SetVolume(const SOUNDTYPE &type, const uint32 &volume)
 					Mix_VolumeMusic(scaledVolume);
 				}
 			}
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 			if (m_redbook)
 				AIL_redbook_set_volume(m_redbook, (sint32)((double)volume * 12.7));
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 			break;
 		default:
 			break;
@@ -816,7 +816,7 @@ SoundManager::SetPosition(const SOUNDTYPE &type,
 {
 	PointerList<CivSound>::PointerListNode *node = NULL;
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	sint32 volume = 0;
 #endif
 
@@ -824,13 +824,13 @@ SoundManager::SetPosition(const SOUNDTYPE &type,
 	{
 		case SOUNDTYPE_SFX:
 			node    = m_sfxSounds->GetHeadNode();
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 			volume  = m_sfxVolume;
 #endif
 			break;
 		case SOUNDTYPE_VOICE:
 			node    = m_voiceSounds->GetHeadNode();
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 			volume  = m_voiceVolume;
 #endif
 			break;
@@ -844,17 +844,17 @@ SoundManager::SetPosition(const SOUNDTYPE &type,
 
 		if (sound && (sound->GetAssociatedObject() == associatedObject))
 		{
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 			Mix_Chunk * myChunk = sound->GetAudio();
  			// Why set the volume again?
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 			sint32 panValue = 64;
 			HAUDIO hAudio   = sound->GetHAudio();
 			if (hAudio)
 			{
 				AIL_quick_set_volume(hAudio, volume, panValue);
 			}
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 		}
 
 		node = node->GetNext();
@@ -877,7 +877,7 @@ void SoundManager::StartMusic(const sint32 &InTrackNum)
 	m_stopRedbookTemporarily = FALSE;
 
 	if (!g_theProfileDB->IsUseRedbookAudio()) return;
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	if (!m_useOggTracks) return;
 #else
 	if (!c3files_HasCD()) return;
@@ -889,7 +889,7 @@ void SoundManager::StartMusic(const sint32 &InTrackNum)
 
 	if (m_curTrack == -1) return;
 
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	if(m_useOggTracks)
 	{
 		char   s[_MAX_PATH];
@@ -984,13 +984,13 @@ void SoundManager::StartMusic(const sint32 &InTrackNum)
 	TerminateAllSounds();
 
 	AIL_redbook_play(m_redbook, start, end);
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 }
 
 void SoundManager::TerminateMusic(void)
 {
 	if (!g_theProfileDB->IsUseRedbookAudio()) return;
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	if (!c3files_HasCD()) return;
 #endif
 
@@ -998,7 +998,7 @@ void SoundManager::TerminateMusic(void)
 
 	if (m_usePlaySound) return;
 
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	if (m_useOggTracks) {
 		if(m_oggTrack) {
 			Mix_FreeMusic(m_oggTrack);
@@ -1011,7 +1011,7 @@ void SoundManager::TerminateMusic(void)
 
 	m_stopRedbookTemporarily = TRUE;
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	if (AIL_redbook_track(m_redbook)) {
 		AIL_redbook_stop(m_redbook);
 	}
@@ -1075,14 +1075,14 @@ void SoundManager::StupidPlaySound(const sint32 &soundID)
 
 void SoundManager::PlayManagedSound(const MBCHAR *fullFilename, const bool &bNoWait)
 {
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	PlaySound(fullFilename, NULL,
 		(SND_ASYNC | SND_FILENAME | (bNoWait ? SND_NOWAIT : 0)));
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 	std::cerr << "SoundManager::PlayManagedSound("
 		<< fullFilename
 		<< ") called." << std::endl;
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 }
 
 void SoundManager::ReleaseSoundDriver()
@@ -1092,7 +1092,7 @@ void SoundManager::ReleaseSoundDriver()
 
 	TerminateAllSounds();
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	HDIGDRIVER		dig;
 	HMDIDRIVER		mdi;
 	HDLSDEVICE		dls;
@@ -1103,7 +1103,7 @@ void SoundManager::ReleaseSoundDriver()
 
 	S32 err = AIL_digital_handle_release(dig);
 	Assert(err);
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 }
 
 void SoundManager::ReacquireSoundDriver()
@@ -1111,7 +1111,7 @@ void SoundManager::ReacquireSoundDriver()
 	if (m_usePlaySound) return;
 	if (m_noSound) return;
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	HDIGDRIVER		dig;
 	HMDIDRIVER		mdi;
 	HDLSDEVICE		dls;
@@ -1121,5 +1121,5 @@ void SoundManager::ReacquireSoundDriver()
 	Assert(err);
 
 	AIL_set_digital_master_volume(dig, s_masterVolume);
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 }

@@ -57,6 +57,8 @@ typedef void (* UiCleanupCallback) (void);
 
 #if defined(__AUI_USE_SDL__)
 #include "aui_sdlui.h"
+#elif defined(__AUI_USE_AMIGA__)
+#include "aui_amigaui.h"
 #else
 #include "aui_directui.h"
 #endif
@@ -72,6 +74,8 @@ typedef void (* UiCleanupCallback) (void);
 
 #if defined(__AUI_USE_SDL__)
 class C3UI : public aui_SDLUI
+#elif defined(__AUI_USE_AMIGA__)
+class C3UI : public aui_AmigaUI
 #else
 class C3UI : public aui_DirectUI
 #endif

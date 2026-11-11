@@ -1,0 +1,94 @@
+# Call to Power II for MorphOS (PowerPC).
+#
+#   make -f Makefile.morphos -j$(nproc)      -> bin/amiga/ctp2.mos
+#
+# Built by the MorphOS SDK's ppc-morphos-gcc 11 (/gg, the morphos-sdk Debian
+# package) with libnix (-noixemul), which writes the native ELF executable
+# itself. The generated sources (database records, SLIC and LDL parsers) come
+# from the host step in ctp2_code/os/amiga/gen.mk, and the platform layer is
+# the Amiga one (ctp2_code/os/amiga, ctp2_code/ui/aui_amiga): MorphOS runs
+# the same intuition, cybergraphics, AHI and timer.device calls natively.
+# CTP2_AMIGA_MOS marks what only MorphOS does (the AHI hook, the clock).
+
+MOS_PREFIX ?= /gg
+CROSS  ?= $(MOS_PREFIX)/bin/ppc-morphos-
+CC     := $(CROSS)gcc
+CXX    := $(CROSS)g++
+STRIP  := $(CROSS)strip
+# 750 (G3) runs on every MorphOS machine; CPU=7450 for a G4 only build.
+CPU    ?= 750
+
+SHELL := /bin/bash
+
+CTP2   := ctp2_code
+GEN    := build/amiga-gen
+OBJDIR := build/morphos
+TARGET := bin/amiga/ctp2.mos
+
+.DEFAULT_GOAL := all
+
+include $(CTP2)/os/amiga/gen.mk
+include $(CTP2)/os/amiga/sources.mk
+include $(CTP2)/os/amiga/common.mk
+
+# -fsigned-char: char is unsigned on the PPC, signed on x86 and the 68k.
+ARCH_FLAGS := -mcpu=$(CPU) -noixemul -fsigned-char
+OPT_FLAGS  ?= -O2
+
+AMIGA_DEFS += -DCTP2_AMIGA_MOS=1
+
+CFLAGS   := $(ARCH_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) $(AMIGA_INCS) $(AMIGA_C_FLAGS) $(EXTRA_CFLAGS)
+CXXFLAGS := $(ARCH_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) $(AMIGA_INCS) $(AMIGA_CXX_FLAGS) $(EXTRA_CXXFLAGS)
+
+# --wrap=fopen: every fopen goes through os/amiga/amiga_posix.c, which makes
+#   the name an AmigaDOS one (c3.h's fopen macro is undone by <cstdio>).
+LDFLAGS := $(ARCH_FLAGS) -Wl,--wrap=fopen $(EXTRA_LDFLAGS)
+LIBS    := -lm
+
+# A changed flag rebuilds every object.
+BUILD_FLAGS_STAMP := $(OBJDIR)/.build-flags
+$(shell mkdir -p $(OBJDIR); f='$(CXXFLAGS) $(CFLAGS)'; [ "$$(cat $(BUILD_FLAGS_STAMP) 2>/dev/null)" = "$$f" ] || printf '%s' "$$f" > $(BUILD_FLAGS_STAMP))
+
+.PHONY: all objects clean check-tools
+all: check-tools $(TARGET)
+objects: $(AMIGA_OBJECTS)
+
+check-tools:
+	@test -x "$(CXX)" || { echo "missing compiler $(CXX) (install the MorphOS SDK or set MOS_PREFIX)"; exit 1; }
+
+$(OBJDIR)/%.o: $(CTP2)/%.cpp $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) $(AMIGA_FILE_FLAGS_$*) -c $< -o $@
+
+$(OBJDIR)/%.o: $(CTP2)/%.c $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) $(CFLAGS) $(AMIGA_FILE_FLAGS_$*) -c $< -o $@
+
+$(OBJDIR)/gen/%.o: $(GEN)/%.cpp $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/gen/%.o: $(GEN)/%.c $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+# The full link with its symbols stays beside the objects for addr2line
+# against a crash address; bin/ gets it stripped.
+DEBUG_EXE := $(OBJDIR)/ctp2.debug
+
+$(DEBUG_EXE): $(AMIGA_OBJECTS)
+	@echo "  LD  $@"
+	@$(CXX) -g -o $@ $(AMIGA_OBJECTS) $(LDFLAGS) $(LIBS)
+
+$(TARGET): $(DEBUG_EXE)
+	@mkdir -p $(dir $@)
+	@$(STRIP) -o $@ $<
+
+clean:
+	rm -rf $(OBJDIR) $(TARGET)
+
+-include $(AMIGA_OBJECTS:.o=.d)

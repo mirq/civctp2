@@ -396,6 +396,10 @@ GAME_EVENT_ERR GameEventManager::ArglistAddEvent(GAME_EVENT_INSERT insert,
 	return Process();
 }
 
+#if defined(__AUI_USE_AMIGA__)
+void amiga_ui_busy_tick(void);   // ui/aui_amiga/aui_amigaui.cpp
+#endif
+
 GAME_EVENT_ERR GameEventManager::Process()
 {
     if (m_processing)   // busy already?
@@ -414,6 +418,11 @@ GAME_EVENT_ERR GameEventManager::Process()
           )
     {
         err             = ProcessHead();
+#if defined(__AUI_USE_AMIGA__)
+        // A turn's events can keep the main loop away for seconds: the
+        // cursor follows the mouse meanwhile (only the cursor).
+        amiga_ui_busy_tick();
+#endif
     }
 	m_processing        = false;
 

@@ -34,7 +34,7 @@
 #ifndef tracklen_h
 #define tracklen_h
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 
 #include <windows.h>
 
@@ -74,6 +74,6 @@ void tracklen_AutoPlay_Restore();
 }
 #endif
 
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 
 #endif // tracklen_h

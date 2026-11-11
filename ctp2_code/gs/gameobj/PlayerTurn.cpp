@@ -85,6 +85,12 @@ void Player::BeginTurn()
 	if(g_controlPanel)
 	{
 		g_controlPanel->UpdatePlayerBeginProgress(m_owner);
+#if defined(CTP2_AMIGA_BUILD)
+		// Every control of the panel drawn again: 150 ms on a 68060, twice
+		// for every player of every turn (EndTurn too). The computer
+		// players' turns do without; the panel's own updates follow them.
+		if (m_owner == g_selected_item->GetVisiblePlayer())
+#endif
 		g_controlPanel->GetWindow()->DrawChildren();
 	}
 

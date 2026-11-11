@@ -14,7 +14,9 @@
 #include <sys/types.h>
 #endif
 #include <fcntl.h>
+#if !defined(CTP2_AMIGA_BUILD)
 #include <sys/mman.h>
+#endif
 #include <dirent.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -23,6 +25,8 @@
 #include <stdint.h>
 
 #include "CivPaths.h"       // g_civPaths
+#include "ctp2_byteorder.h"
+#include "rimutils.h"       // RIMHeader
 
 #define MAX_ENTRIES_PER_TABLE 100
 #define ZFSFLAG_DELETED 0x0001
@@ -56,6 +60,32 @@ struct ZFS_FHEADER {
 #ifdef __linux__
 #pragma pack(pop, 0)
 #endif
+
+// ZFS archives are little-endian: the header and directory tables in the
+// machine's order (nothing to do on a little-endian machine). Read through
+// addPath_ZFS, which is what the big-endian builds use.
+static void SwapHeaderLE(ZFS_FHEADER & header)
+{
+    ctp2_swap_le(header.version);
+    ctp2_swap_le(header.max_recordname_length);
+    ctp2_swap_le(header.max_entries_per_table);
+    ctp2_swap_le(header.num_rentries);
+    ctp2_swap_le(header.encrypt_key);
+    ctp2_swap_le(header.dtable_head);
+}
+
+static void SwapDTableLE(ZFS_DTABLE & dtable)
+{
+    ctp2_swap_le(dtable.next_dtable);
+    for (int i = 0; i < MAX_ENTRIES_PER_TABLE; ++i)
+    {
+        ctp2_swap_le(dtable.rentry[i].offset);
+        ctp2_swap_le(dtable.rentry[i].rnum);
+        ctp2_swap_le(dtable.rentry[i].size);
+        ctp2_swap_le(dtable.rentry[i].time);
+        ctp2_swap_le(dtable.rentry[i].flags);
+    }
+}
 
 char *strcasecpy(char *out, char const * in)
 {
@@ -119,6 +149,37 @@ void unmapFile(void *ptr, HANDLE mhandle, HANDLE fhandle)
 }
 #else
 
+#if defined(CTP2_AMIGA_BUILD)
+// No memory mapped files on AmigaOS: the archive is read into memory. (The
+// game asks for this only with use_filemapping, which addPath turns off on the
+// Amiga: entries are then read from the file as they are needed.)
+void * mapFile(char const *path, long *size, PFPath &pfp)
+{
+    FILE * fp = fopen(path, "rb");
+    if (!fp) return NULL;
+
+    fseek(fp, 0, SEEK_END);
+    *size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    void * ptr = malloc(*size);
+    if (ptr && fread(ptr, *size, 1, fp) != 1)
+    {
+        free(ptr);
+        ptr = NULL;
+    }
+    fclose(fp);
+
+    pfp.zms_size = *size;
+    pfp.zms_hf   = -1;
+    return ptr;
+}
+
+void unmapFile(PFPath &pfp)
+{
+    free(pfp.zms_start);
+}
+#else
 void * mapFile(char const *path, long *size, PFPath &pfp)
 {
     void *ptr;
@@ -148,6 +209,7 @@ void unmapFile(PFPath &pfp)
     munmap(pfp.zms_start, pfp.zms_size);
     close(pfp.zms_hf);
 }
+#endif // CTP2_AMIGA_BUILD
 #endif
 
 ProjectFile::ProjectFile()
@@ -247,7 +309,12 @@ void *ProjectFile::getData_DOS(PFEntry *entry, size_t & size, C3DIR dir)
         sprintf(m_error_string, "Couldn't open file \"%s\"", tempstr);
         return(NULL);
     }
+#if defined(CTP2_AMIGA_BUILD)
+    // libnix reads an unbuffered stream one byte per DOS call.
+    setvbuf(fp, NULL, _IOFBF, CTP2_AMIGA_STDIO_BUFFER);
+#else
     setvbuf(fp, NULL, _IONBF, 0);
+#endif
 
     fseek(fp, 0, SEEK_END);
     size = ftell(fp);
@@ -326,13 +393,38 @@ void *ProjectFile::getData(char const * rname, size_t & size, C3DIR dir)
         return NULL;
     }
 
+    void * data = NULL;
     switch (m_paths[entry->path].type)
     {
     default:                return NULL;
-    case PRJFILE_PATH_DOS:  return getData_DOS(entry, size, dir);
-    case PRJFILE_PATH_ZFS:  return getData_ZFS(entry, size);
-    case PRJFILE_PATH_ZMS:  return getData_ZMS(entry, size);
+    case PRJFILE_PATH_DOS:  data = getData_DOS(entry, size, dir); break;
+    case PRJFILE_PATH_ZFS:  data = getData_ZFS(entry, size);      break;
+    case PRJFILE_PATH_ZMS:  data = getData_ZMS(entry, size);      break;
     }
+
+#if !CTP2_LITTLE_ENDIAN_HOST
+    // RIM images (little-endian, 16-bit pixels) in the machine's order, in
+    // the one place all their readers get them from. Each call reads a fresh
+    // copy (DOS and ZFS paths; the mapped ZMS path is not used on big-endian
+    // builds: addPath).
+    if (data && size >= sizeof(RIMHeader))
+    {
+        size_t const len = strlen(rname);
+        if (len > 4 && stricmp(rname + len - 4, ".rim") == 0)
+        {
+            RIMHeader * rhead = static_cast<RIMHeader *>(data);
+            ctp2_swap_le(rhead->version);
+            ctp2_swap_le(rhead->width);
+            ctp2_swap_le(rhead->height);
+            ctp2_swap_le(rhead->pitch);
+            ctp2_swap_le(rhead->flags);
+            ctp2_swap_le16_array(static_cast<uint8 *>(data) + sizeof(RIMHeader),
+                                 (size - sizeof(RIMHeader)) / 2);
+        }
+    }
+#endif
+
+    return data;
 }
 
 void *ProjectFile::getData(char const * rname, size_t & size,
@@ -508,7 +600,12 @@ int ProjectFile::addPath_ZFS(char const * path)
 		sprintf(m_error_string, "Could not open file \"%s\"", path);
 		return(0);
 	}
+#if defined(CTP2_AMIGA_BUILD)
+    // libnix reads an unbuffered stream one byte per DOS call.
+    setvbuf(fp, NULL, _IOFBF, CTP2_AMIGA_STDIO_BUFFER);
+#else
     setvbuf(fp, NULL, _IONBF, 0);
+#endif
 
     int pathnum = m_num_paths;
 
@@ -526,6 +623,7 @@ int ProjectFile::addPath_ZFS(char const * path)
 		sprintf(m_error_string, "Could not read header of file \"%s\"", path);
 		return(0);
 	}
+    SwapHeaderLE(header);
 
     if (!verify_ZFS_header(&header)) {
 		sprintf(m_error_string, "Invalid header in file \"%s\"", path);
@@ -547,6 +645,7 @@ int ProjectFile::addPath_ZFS(char const * path)
             delete [] tmpList;
             return(0);
         }
+        SwapDTableLE(dtable);
 
         read_ZFS_dtable(pathnum, &dtable, &tlp, &rcount);
     }
@@ -630,6 +729,11 @@ int ProjectFile::addPath(char const * path, bool use_filemapping)
             (toupper(ext[2]) == 'S') &&
             (toupper(ext[3]) == 0))
         {
+#if defined(CTP2_AMIGA_BUILD)
+            // Read entries from the file as needed rather than the whole
+            // archive into memory (no mmap on AmigaOS).
+            use_filemapping = false;
+#endif
             return (use_filemapping) ? addPath_ZMS(path) : addPath_ZFS(path);
         }
     }

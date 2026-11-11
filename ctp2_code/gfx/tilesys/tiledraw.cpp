@@ -71,7 +71,9 @@
 #include <inttypes.h>
 
 #include "aui.h"
+#if !defined(__AUI_USE_AMIGA__)
 #include "aui_sdlsurface.h"
+#endif
 #include "aui_bitmapfont.h"
 #include "ConstRecord.h"			// g_theConstDB
 #include "pixelutils.h"

@@ -49,6 +49,15 @@
 
 extern sint32 g_is565Format;
 
+// A parse error ends the game with a dialog either way; without C++
+// exceptions (the Amiga builds) the dialog comes straight from the throw site.
+#if defined(__EXCEPTIONS)
+#define COLORSET_FAIL(token, message) throw std::runtime_error(message)
+#else
+#define COLORSET_FAIL(token, message) \
+	do { c3errors_FatalDialog((token).ErrStr(), "%s", (message)); exit(EXIT_FAILURE); } while (false)
+#endif
+
 namespace
 {
 
@@ -110,7 +119,7 @@ template <typename T> T ParseNextNumber(Token & tokenStream)
 {
     if (TOKEN_NUMBER != tokenStream.Next())
     {
-        throw std::runtime_error("Error during parse.");
+        COLORSET_FAIL(tokenStream, "Error during parse.");
     }
 
     sint32  tmp;
@@ -194,11 +203,13 @@ void ColorSet::Import(uint32 fileNumber)
 	sprintf(filename, "Colors%.2u.txt", fileNumber);
 	Token       theToken(filename, C3DIR_GAMEDATA);
 
+#if defined(__EXCEPTIONS)
     try
+#endif
     {
         if (TOKEN_NUMBER != theToken.GetType())
         {
-            throw std::runtime_error("Missing number of colors.");
+            COLORSET_FAIL(theToken, "Missing number of colors.");
         }
 
         sint32 fileColorCount = 0;
@@ -207,14 +218,14 @@ void ColorSet::Import(uint32 fileNumber)
 		     && (fileColorCount <  static_cast<sint32>(NEW_COLOR_NUMBER_MIN))
            )
 		{
-	        throw std::runtime_error("Illegal number of colors.");
+	        COLORSET_FAIL(theToken, "Illegal number of colors.");
         }
 
         if (!token_ParseKeywordNext(&theToken, TOKEN_COLORSET) ||
 	        !token_ParseAnOpenBraceNext(&theToken)
            )
         {
-            throw std::runtime_error("Error before open brace.");
+            COLORSET_FAIL(theToken, "Error before open brace.");
         }
 
         size_t const    arraySize   =
@@ -225,7 +236,7 @@ void ColorSet::Import(uint32 fileNumber)
         {
 	        if (!token_ParseKeywordNext(&theToken, TOKEN_COLORSET_COLOR))
             {
-		        throw std::runtime_error("Error during parse.");
+		        COLORSET_FAIL(theToken, "Error during parse.");
             }
 
 	        uint16 const    r       = ParseNextNumber<uint16>(theToken);
@@ -264,11 +275,13 @@ void ColorSet::Import(uint32 fileNumber)
             c3errors_ErrorDialog(theToken.ErrStr(), "Missing close brace.");
         }
     }
+#if defined(__EXCEPTIONS)
     catch (std::exception const & error)
     {
         std::vector<Pixel16>().swap(m_colors);
         c3errors_FatalDialog(theToken.ErrStr(), error.what());
     }
+#endif
 }
 
 Pixel16 ColorSet::GetColor(COLOR color) const

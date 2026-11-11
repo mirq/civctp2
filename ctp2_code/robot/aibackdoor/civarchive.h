@@ -69,7 +69,15 @@ class DataCheck ;
   #define   INTERFACE_RESULT_TYPE(a_Type) STDMETHODIMP_(a_Type)
 #endif
 
-#if !defined(__AUI_USE_SDL__)
+#if defined(CTP2_AMIGA_BUILD)
+// Big-endian: the typed values go to the file little-endian, as on a PC.
+// (Objects stored as raw memory stay in the machine's order, so Amiga saves
+// load on the Amiga, not on a PC.)
+#include "ctp2_byteorder.h"
+#define SDL_SwapLE16(x) ctp2_le16(x)
+#define SDL_SwapLE32(x) ctp2_le32(x)
+#define SDL_SwapLE64(x) ctp2_le64(x)
+#elif !defined(__AUI_USE_SDL__)
 #define SDL_SwapLE16(x) (x)
 #define SDL_SwapLE32(x) (x)
 #define SDL_SwapLE64(x) (x)

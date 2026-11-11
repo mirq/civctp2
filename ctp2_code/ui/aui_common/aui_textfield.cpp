@@ -18,6 +18,68 @@
 #include <string>
 #include <codecvt>
 #include <locale>
+#elif defined(__AUI_USE_AMIGA__)
+#include <string>
+#include <locale>
+#include <stdlib.h>
+#include "amiga_keycodes.h"
+
+// A 16-bit R5G6B5 pixel, the format of every Amiga surface.
+#define RGB565(r, g, b) static_cast<uint32>((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | (((b) & 0xF8) >> 3))
+
+namespace
+{
+	// The text fields' clipboard, inside the game for now.
+	std::string s_clipboard;
+
+	int SDL_SetClipboardText(const char * text)
+	{
+		s_clipboard = text ? text : "";
+		return 0;
+	}
+
+	bool SDL_HasClipboardText()
+	{
+		return !s_clipboard.empty();
+	}
+
+	char * SDL_GetClipboardText()
+	{
+		return strdup(s_clipboard.c_str());
+	}
+
+	void SDL_free(void * p)
+	{
+		free(p);
+	}
+}
+#endif
+
+#if defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__)
+namespace
+{
+	// The locale the word selection goes by: the system's preferred one with
+	// SDL, the classic one on the Amiga (no named C++ locales in libnix).
+	std::locale PreferredLocale()
+	{
+		std::locale loc;
+#if defined(__AUI_USE_SDL__)
+		SDL_Locale* locales = SDL_GetPreferredLocales();
+
+		try
+		{
+			loc = std::locale(locales[0].language);
+		}
+		catch(std::runtime_error&)
+		{
+			// Nothing to do here we have a valid locale, just not the one we want
+		}
+
+		SDL_free(locales);
+#endif
+		return loc;
+	}
+}
 #endif
 
 WNDPROC aui_TextField::m_windowProc = NULL;
@@ -530,7 +592,7 @@ AUI_ERRCODE aui_TextField::DrawThis( aui_Surface *surface, sint32 x, sint32 y )
 			Assert( errcode == AUI_ERRCODE_OK );
 		}
 	}
-#elif defined(__AUI_USE_SDL__)
+#elif defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__)
 
 #if defined(WIN32)
 	COLORREF winColor              = GetSysColor(COLOR_WINDOW);
@@ -545,15 +607,22 @@ AUI_ERRCODE aui_TextField::DrawThis( aui_Surface *surface, sint32 x, sint32 y )
 	COLORREF winHighLightTextColor = RGB(0xff, 0xff, 0xff);
 #endif
 
+#if defined(__AUI_USE_SDL__)
 	SDL_Surface* SDLsurf = static_cast<aui_SDLSurface*>(surface)->DDS();
+#endif
 
 	MBCHAR* text     =  m_Text     + m_viewStart;
 	size_t  selStart = (m_selStart > m_viewStart) ? m_selStart - m_viewStart : 0;
 	size_t  selEnd   = (m_selEnd   > m_viewStart) ? m_selEnd   - m_viewStart : 0;
 
 	// Fill background
+#if defined(__AUI_USE_SDL__)
 	SDL_Rect r1 = { rect.left, rect.top, rect.right-rect.left, rect.bottom-rect.top };
 	SDL_FillRect(SDLsurf, &r1, SDL_MapRGB(SDLsurf->format, GetRValue(winColor), GetGValue(winColor), GetBValue(winColor)));
+#else
+	g_ui->TheBlitter()->ColorBlt(surface, &rect,
+		RGB565(GetRValue(winColor), GetGValue(winColor), GetBValue(winColor)), 0);
+#endif
 
 	m_Font->DrawString(surface, &rect, &rect, text,
 		k_AUI_BITMAPFONT_DRAWFLAG_JUSTLEFT,
@@ -569,8 +638,14 @@ AUI_ERRCODE aui_TextField::DrawThis( aui_Surface *surface, sint32 x, sint32 y )
 	// Draw blinking caret
 	if (m_blink && GetKeyboardFocus() == this)
 	{
+#if defined(__AUI_USE_SDL__)
 		SDL_Rect r2 = { rect.left + offset - 1, rect.top + 2, 2, rect.bottom - rect.top - 4 };
 		SDL_FillRect(SDLsurf, &r2, SDL_MapRGB(SDLsurf->format, GetRValue(winTextColor), GetGValue(winTextColor), GetBValue(winTextColor)));
+#else
+		RECT r2 = { rect.left + offset - 1, rect.top + 2, rect.left + offset + 1, rect.bottom - 2 };
+		g_ui->TheBlitter()->ColorBlt(surface, &r2,
+			RGB565(GetRValue(winTextColor), GetGValue(winTextColor), GetBValue(winTextColor)), 0);
+#endif
 	}
 #endif
 
@@ -580,7 +655,7 @@ AUI_ERRCODE aui_TextField::DrawThis( aui_Surface *surface, sint32 x, sint32 y )
 	return AUI_ERRCODE_OK;
 }
 
-#if defined(__AUI_USE_SDL__)
+#if (defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__))
 size_t aui_TextField::GetInvisibleNumToSelStart()
 {
 	RECT  rect   = { 0, 0, m_width, m_height };
@@ -636,7 +711,7 @@ void aui_TextField::PostChildrenCallback( aui_MouseEvent *mouseData )
 	}
 }
 
-#if defined(__AUI_USE_SDL__)
+#if (defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__))
 void aui_TextField::MouseLDragInside(aui_MouseEvent * mouseData)
 {
 	if ( IsDisabled() ) return;
@@ -718,20 +793,7 @@ void aui_TextField::MouseLDoubleClickInside(aui_MouseEvent * mouseData)
 
 	m_Font->GetLineInfo(&rect, &penPos, NULL, NULL, &start, stop, true, true);
 
-	// Get the system preferred locale
-	SDL_Locale* locales = SDL_GetPreferredLocales();
-
-	std::locale loc;
-	try
-	{
-		loc = std::locale(locales[0].language);
-	}
-	catch(std::runtime_error&)
-	{
-		// Nothing to do here we have a valid locale, just not the one we want
-	}
-
-	SDL_free(locales);
+	std::locale const loc = PreferredLocale();
 
 	const MBCHAR* wordStart = start;
 	for(; wordStart > m_Text && std::isalnum(*wordStart, loc); wordStart--)
@@ -758,20 +820,7 @@ void aui_TextField::MouseLDoubleClickInside(aui_MouseEvent * mouseData)
 
 void aui_TextField::SelectWordStart()
 {
-	// Get the system preferred locale
-	SDL_Locale* locales = SDL_GetPreferredLocales();
-
-	std::locale loc;
-	try
-	{
-		loc = std::locale(locales[0].language);
-	}
-	catch(std::runtime_error&)
-	{
-		// Nothing to do here we have a valid locale, just not the one we want
-	}
-
-	SDL_free(locales);
+	std::locale const loc = PreferredLocale();
 
 	const MBCHAR* wordStart = m_Text + m_selEnd;
 	const MBCHAR*      stop = m_Text + GetTextLength();
@@ -788,20 +837,7 @@ void aui_TextField::SelectWordStart()
 
 void aui_TextField::SelectWordEnd()
 {
-	// Get the system preferred locale
-	SDL_Locale* locales = SDL_GetPreferredLocales();
-
-	std::locale loc;
-	try
-	{
-		loc = std::locale(locales[0].language);
-	}
-	catch(std::runtime_error&)
-	{
-		// Nothing to do here we have a valid locale, just not the one we want
-	}
-
-	SDL_free(locales);
+	std::locale const loc = PreferredLocale();
 
 	const MBCHAR* wordEnd = m_Text + m_selEnd;
 	const MBCHAR*    stop = m_Text + GetTextLength();
@@ -959,7 +995,7 @@ int CALLBACK EnumTextFontsProc( LOGFONT *lplf, TEXTMETRIC *lptm, DWORD dwType, L
 
 	return TRUE;
 }
-#elif defined(__AUI_USE_SDL__)
+#elif (defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__))
 /* 
 Handling key input for text field with SDL
 

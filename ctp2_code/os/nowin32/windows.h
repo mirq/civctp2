@@ -121,6 +121,13 @@ typedef struct tagRECT
 /* Stub definitions */
 typedef struct critical_section_t {} CRITICAL_SECTION;
 typedef CRITICAL_SECTION *LPCRITICAL_SECTION;
+#if defined(CTP2_AMIGA_BUILD)
+/* The Amiga builds are single-threaded: nothing to exclude. */
+static inline void InitializeCriticalSection(LPCRITICAL_SECTION cs) { (void) cs; }
+static inline void DeleteCriticalSection(LPCRITICAL_SECTION cs) { (void) cs; }
+static inline void EnterCriticalSection(LPCRITICAL_SECTION cs) { (void) cs; }
+static inline void LeaveCriticalSection(LPCRITICAL_SECTION cs) { (void) cs; }
+#endif
 
 typedef struct handle_t* HANDLE;
 typedef struct hbitmap_t* HBITMAP;
@@ -226,13 +233,9 @@ typedef struct hwnd_t* HWND;
 #define WM_MBUTTONUP   0x0208
 /* Makros */
 #define CALLBACK
-#ifdef WORDS_BIGENDIAN
-#define HIWORD(w) ((WORD)(w))
-#define LOWORD(w) ((WORD)((w)>>16))
-#else
+/* Shifts act on values, not on bytes in memory: the same on any byte order. */
 #define LOWORD(w) ((WORD)(w))
 #define HIWORD(w) ((WORD)((w)>>16))
-#endif
 #define RGB(r,g,b) ((BYTE)(b) << 16 | (BYTE)(g) << 8 | (BYTE)(r))
 #define WINAPI
 
@@ -260,5 +263,19 @@ int strnicmp(const char *str1, const char *str2, size_t n);
 #endif
 int _stricoll(const char *str1, const char *str2);
 char* strupr(char* str);
+
+#if defined(CTP2_AMIGA_BUILD)
+/* No threads on the Amiga builds: a "thread" runs to its end inside
+ * CreateThread, and its exit code is kept for GetExitCodeThread. Only the
+ * multiplayer shell (ui/netshell/netfunc.cpp) starts threads, and it cannot
+ * connect anywhere on the Amiga. */
+#define STILL_ACTIVE 259
+typedef DWORD (*LPTHREAD_START_ROUTINE)(LPVOID);
+HANDLE CreateThread(void *attributes, size_t stackSize,
+                    LPTHREAD_START_ROUTINE start, LPVOID parameter,
+                    DWORD flags, DWORD *threadId);
+BOOL GetExitCodeThread(HANDLE thread, DWORD *exitCode);
+BOOL CloseHandle(HANDLE handle);
+#endif
 
 #endif

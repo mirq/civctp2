@@ -10,6 +10,8 @@
 #include <multimon.h>
 #elif defined(__AUI_USE_SDL__)
 #include <SDL2/SDL.h>
+#elif defined(__AUI_USE_AMIGA__)
+#include "amiga_platform.h"
 #endif
 
 PointerList<CTPDisplayMode>	*g_displayModes = NULL;
@@ -135,6 +137,24 @@ void display_EnumerateDisplayModes(void)
 	}
 
 	g_displayModes = new PointerList<CTPDisplayMode>;
+#elif defined(__AUI_USE_AMIGA__)
+	g_displayModes = new PointerList<CTPDisplayMode>;
+
+	// The card's 16-bit RTG modes, 800x600 and up, as the SDL build lists.
+	static const int MAX_MODES = 64;
+	int widths[MAX_MODES];
+	int heights[MAX_MODES];
+	int const count = amiga_video_modes(widths, heights, MAX_MODES);
+	for (int i = 0; i < count; i++)
+	{
+		if (!display_IsLegalResolution(widths[i], heights[i]) && heights[i] >= 600)
+		{
+			CTPDisplayMode *mode = new CTPDisplayMode;
+			mode->width  = widths[i];
+			mode->height = heights[i];
+			g_displayModes->AddTail(mode);
+		}
+	}
 #else
 	g_displayModes = new PointerList<CTPDisplayMode>;
 

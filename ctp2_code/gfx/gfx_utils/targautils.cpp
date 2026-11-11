@@ -31,6 +31,7 @@
 /// \brief  Targa (.tga) file support
 
 #include "c3.h"
+#include "ctp2_byteorder.h"
 #include "targautils.h"
 
 #include <algorithm>
@@ -66,6 +67,18 @@ namespace
 SHORT TgaDecodeScanLine(BYTE *DecodedBuffer, WORD LineLength,
                         WORD PixelSize, BYTE **DpTga);
 
+// Targa files are little-endian: the header's words in the machine's order
+// (nothing to do on a little-endian machine).
+static void SwapHeaderLE(TGAHEADER & head)
+{
+	ctp2_swap_le(head.CmapIndex);
+	ctp2_swap_le(head.CmapLength);
+	ctp2_swap_le(head.X_Origin);
+	ctp2_swap_le(head.Y_Origin);
+	ctp2_swap_le(head.ImageWidth);
+	ctp2_swap_le(head.ImageHeight);
+}
+
 bool Get_TGA_Dimension (char const * fname,
                         int &Width,
                         int &Height,
@@ -77,7 +90,12 @@ bool Get_TGA_Dimension (char const * fname,
 		ReportFileNotFound(fname);
 		return false;
 	}
+#if defined(CTP2_AMIGA_BUILD)
+	// libnix moves an unbuffered stream one byte per DOS call.
+	setvbuf(fp, NULL, _IOFBF, CTP2_AMIGA_STDIO_BUFFER);
+#else
 	setvbuf(fp, NULL, _IONBF, 0);
+#endif
 
 	TGAHEADER head;
 	if (fread(&head, sizeof(TGAHEADER), 1, fp) < 1)
@@ -86,6 +104,7 @@ bool Get_TGA_Dimension (char const * fname,
 		fclose(fp);
 		return false;
 	}
+	SwapHeaderLE(head);
 
 	switch (head.PixelDepth)
     {
@@ -133,7 +152,12 @@ bool Load_TGA_File_Simple(char const * fname,
 		return false;
 	}
 
+#if defined(CTP2_AMIGA_BUILD)
+	// libnix moves an unbuffered stream one byte per DOS call.
+	setvbuf(fp, NULL, _IOFBF, CTP2_AMIGA_STDIO_BUFFER);
+#else
 	setvbuf(fp, NULL, _IONBF, 0);
+#endif
 
 	TGAHEADER head;
 	if (fread(&head, sizeof(TGAHEADER), 1, fp) < 1)
@@ -142,6 +166,7 @@ bool Load_TGA_File_Simple(char const * fname,
 		fclose(fp);
 		return false;
 	}
+	SwapHeaderLE(head);
 
     int bpp;
 	switch (head.PixelDepth)
@@ -252,7 +277,12 @@ bool Load_TGA_File(char const *fname,
 		ReportFileNotFound(fname);
 		return false;
 	}
+#if defined(CTP2_AMIGA_BUILD)
+	// libnix moves an unbuffered stream one byte per DOS call.
+	setvbuf(fp, NULL, _IOFBF, CTP2_AMIGA_STDIO_BUFFER);
+#else
 	setvbuf(fp, NULL, _IONBF, 0);
+#endif
 
 	TGAHEADER head;
 	if (fread(&head, sizeof(TGAHEADER), 1, fp) < 1)
@@ -261,6 +291,7 @@ bool Load_TGA_File(char const *fname,
 		fclose(fp);
 		return false;
 	}
+	SwapHeaderLE(head);
 
 	int bpp;
 	switch (head.PixelDepth)
@@ -300,6 +331,9 @@ bool Load_TGA_File(char const *fname,
 				fclose(fp);
 				return false;
 			}
+
+			// 16-bit little-endian pixels.
+			ctp2_swap_le16_array(dataPtr, width);
 
 			if (convertToNative && g_is565Format)
 			{
@@ -398,7 +432,12 @@ bool write_tga(char const * fname, int width, int height, unsigned char const * 
 		return false;
 	}
 
+#if defined(CTP2_AMIGA_BUILD)
+	// libnix moves an unbuffered stream one byte per DOS call.
+	setvbuf(fp, NULL, _IOFBF, CTP2_AMIGA_STDIO_BUFFER);
+#else
 	setvbuf(fp, NULL, _IONBF, 0);
+#endif
 
 	TGAHEADER head;
 	head.IdLength       = 0;

@@ -249,11 +249,11 @@ spnewgamescreen_startPress(aui_Control *control, uint32 action, uint32 data, Coo
 {
 	if ( action == uint32(AUI_BUTTON_ACTION_EXECUTE) )
 	{
-#if defined(USE_SDL)
+#if defined(CTP2_PORTABLE_BUILD)
 		bool legalGame = true;
-#else // USE_SDL
+#else // CTP2_PORTABLE_BUILD
 		bool legalGame = c3files_HasLegalCD();
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 		if (legalGame)
 		{
 			MBCHAR fieldText[k_MAX_NAME_LEN];
@@ -400,10 +400,10 @@ void spnewgamescreen_scenarioExitCallback(aui_Control *control, uint32 action, u
 
 	if (c3files_PathIsValid(tempPath)) {
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 		if(!c3files_HasLegalCD())
 			exit(0);
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 
 		SaveInfo *saveInfo = new SaveInfo;
 

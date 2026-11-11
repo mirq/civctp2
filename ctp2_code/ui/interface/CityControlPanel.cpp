@@ -45,7 +45,6 @@
 #include "c3.h"
 #include "CityControlPanel.h"
 
-#include <strstream>
 
 #include "aui_ldl.h"
 #include "BuildingRecord.h"

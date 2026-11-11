@@ -117,7 +117,7 @@ DialogBoxWindow *g_exclusionsWindow = NULL;
 #define DEBUG_PushChatMessage(arg) ((void)0)
 #endif
 
-#ifdef LINUX
+#if defined(LINUX) || defined(CTP2_AMIGA_BUILD)
 #include <unistd.h>
 #endif
 
@@ -3246,11 +3246,11 @@ void AllinoneWindow::OKButtonAction::Execute(
 
 	if ( g_playersetup.IsReadyToLaunch() ) return;
 
-#if defined(USE_SDL)
+#if defined(CTP2_PORTABLE_BUILD)
 	bool legalGame = true;
-#else // USE_SDL
+#else // CTP2_PORTABLE_BUILD
 	bool legalGame = c3files_HasLegalCD();
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 	if (g_netfunc->IsHost() && !legalGame )
 	{
 		ns_String donthavecd( "strings.system.donthavecd" );

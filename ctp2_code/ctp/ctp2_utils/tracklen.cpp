@@ -30,7 +30,7 @@
 //----------------------------------------------------------------------------
 #include "c3.h"
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 
 #include <stdio.h>
 
@@ -433,4 +433,4 @@ void tracklen_AutoPlay_Restore()
 	 }
 }
 
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD

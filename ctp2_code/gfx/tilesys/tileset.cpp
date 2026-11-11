@@ -51,6 +51,7 @@
 #include "MapIconRecord.h"
 
 #include "prjfile.h"
+#include "ctp2_byteorder.h"
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -208,6 +209,10 @@ void TileSet::CleanupMapped(void)
 
 	CloseHandle(m_mappedFileHandle);
 	CloseHandle(m_fileHandle);
+#elif defined(CTP2_AMIGA_BUILD)
+	// Read into memory by QuickLoad (no mmap on AmigaOS).
+	delete [] m_tileSetData;
+	m_tileSetData = NULL;
 #else
 	munmap(m_tileSetData, m_MMapSize);
 	close(m_fd);
@@ -601,15 +606,18 @@ void TileSet::Load(void)
 
 void TileSet::QuickLoadTransforms(uint8 **dataPtr)
 {
+	// The tile set file is little-endian; it is held in memory and its
+	// words are put in the machine's order in place as they are parsed
+	// (ctp2_byteorder.h: nothing to do on a little-endian machine).
 	if (dataPtr) {
-	    m_numTransforms = *(uint16 *)(*dataPtr);
-		(*dataPtr) += sizeof(uint16);
+	    m_numTransforms = ctp2_read_le16(dataPtr);
 
 		m_transforms = new sint16*[m_numTransforms];
 
 		for (uint16 i = 0; i < m_numTransforms; ++i)
         {
 			m_transforms[i] = (sint16 *)(*dataPtr);
+			ctp2_swap_le16_array(*dataPtr, k_TRANSFORM_SIZE);
 			(*dataPtr) += sizeof(sint16)*k_TRANSFORM_SIZE;
 		}
 	}
@@ -618,23 +626,18 @@ void TileSet::QuickLoadTransforms(uint8 **dataPtr)
 void TileSet::QuickLoadTransitions(uint8 **dataPtr)
 {
 
-	uint32		transitionCount = *(uint32 *)(*dataPtr);
-	(*dataPtr) += sizeof(uint32);
-
-	uint32		transitionSize  = *(uint32 *)(*dataPtr);
-	(*dataPtr) += sizeof(uint32);
+	uint32		transitionCount = ctp2_read_le32(dataPtr);
+	uint32		transitionSize  = ctp2_read_le32(dataPtr);
 
 	for (uint32 i = 0; i < transitionCount; ++i)
     {
-		sint16 from = *(sint16 *)(*dataPtr);
-		(*dataPtr) += sizeof(sint16);
-
-		sint16 to = *(sint16 *)(*dataPtr);
-		(*dataPtr) += sizeof(sint16);
+		sint16 from = static_cast<sint16>(ctp2_read_le16(dataPtr));
+		sint16 to   = static_cast<sint16>(ctp2_read_le16(dataPtr));
 
 		for (size_t k = 0; k < k_TRANSITIONS_PER_TILE; ++k)
         {
 			m_transitions[from][to][k] = (Pixel16 *)(*dataPtr);
+			ctp2_swap_le16_array(*dataPtr, transitionSize / 2);
 			(*dataPtr) += transitionSize;
 		}
 	}
@@ -642,8 +645,7 @@ void TileSet::QuickLoadTransitions(uint8 **dataPtr)
 
 void TileSet::QuickLoadBaseTiles(uint8 **dataPtr)
 {
-	uint32			baseTileCount = *(uint32 *)(*dataPtr);
-	(*dataPtr) += sizeof(uint32);
+	uint32			baseTileCount = ctp2_read_le32(dataPtr);
 
 	for (uint32 i = 0; i < baseTileCount; ++i)
     {
@@ -656,8 +658,7 @@ void TileSet::QuickLoadBaseTiles(uint8 **dataPtr)
 
 void TileSet::QuickLoadRiverTransforms(uint8 **dataPtr)
 {
-	uint16		numRiverTransforms = *(uint16 *)(*dataPtr);;
-	(*dataPtr) += sizeof(uint16);
+	uint16		numRiverTransforms = ctp2_read_le16(dataPtr);
 
 	if (numRiverTransforms > 0)
     {
@@ -668,14 +669,15 @@ void TileSet::QuickLoadRiverTransforms(uint8 **dataPtr)
 		for (uint16 i = 0; i < numRiverTransforms; ++i)
         {
 			m_riverTransforms[i] = (sint16 *)(*dataPtr);
+			ctp2_swap_le16_array(*dataPtr, k_RIVER_TRANSFORM_SIZE);
 			(*dataPtr) += (sizeof(sint16)*k_RIVER_TRANSFORM_SIZE);
 
-			uint32 len = *(uint32 *)(*dataPtr);
-			(*dataPtr) += sizeof(uint32);
+			uint32 len = ctp2_read_le32(dataPtr);
 
 			if (len > 0)
             {
 				m_riverData[i] = (Pixel16 *)(*dataPtr);
+				ctp2_swap_le16_array(*dataPtr, len / 2);
 				(*dataPtr) += len;
 			}
             else
@@ -688,20 +690,17 @@ void TileSet::QuickLoadRiverTransforms(uint8 **dataPtr)
 
 void TileSet::QuickLoadImprovements(uint8 **dataPtr)
 {
-	uint16		numImprovements = *(uint16 *)(*dataPtr);
-	(*dataPtr) += sizeof(numImprovements);
+	uint16		numImprovements = ctp2_read_le16(dataPtr);
 
 	for (uint16 i = 0; i < numImprovements; ++i)
     {
-		uint16 impNum = *(uint16 *)(*dataPtr);
-		(*dataPtr) += sizeof(uint16);
-
-		uint32 len = *(uint32 *)(*dataPtr);
-		(*dataPtr) += sizeof(uint32);
+		uint16 impNum = ctp2_read_le16(dataPtr);
+		uint32 len    = ctp2_read_le32(dataPtr);
 
 		if (len > 0)
         {
 			m_improvementData[impNum] = (Pixel16 *)(*dataPtr);
+			ctp2_swap_le16_array(*dataPtr, len / 2);
 			(*dataPtr) += len;
 		}
         else
@@ -713,20 +712,31 @@ void TileSet::QuickLoadImprovements(uint8 **dataPtr)
 
 void TileSet::QuickLoadMegaTiles(uint8 **dataPtr)
 {
-	m_numMegaTiles = *(uint16 *)(*dataPtr);
-	(*dataPtr) += sizeof(m_numMegaTiles);
+	m_numMegaTiles = ctp2_read_le16(dataPtr);
 
 	for (uint16 i = 0; i < m_numMegaTiles; ++i)
     {
-		uint16	megaLen = *(uint16 *)(*dataPtr);
-		(*dataPtr) += sizeof(megaLen);
+		uint16	megaLen = ctp2_read_le16(dataPtr);
 
 		m_megaTileLengths[i] = megaLen;
 
 		if (megaLen > 0)
         {
+#if CTP2_LITTLE_ENDIAN_HOST
 			memcpy(m_megaTileData[i], (MegaTileStep *)(*dataPtr), sizeof(MegaTileStep) * megaLen);
 			(*dataPtr) += (megaLen * sizeof(MegaTileStep));
+#else
+			// A MegaTileStep is a bit field in a 32-bit word, laid out from
+			// the low bit on x86 and from the high bit on a big-endian GCC:
+			// each step is taken apart as x86 wrote it.
+			for (uint16 s = 0; s < megaLen; ++s)
+			{
+				uint32 const v = ctp2_read_le32(dataPtr);
+				m_megaTileData[i][s].direction   = v & 0x3F;
+				m_megaTileData[i][s].terrainType = (v >> 6) & 0x3FF;
+				m_megaTileData[i][s].tileNum     = (v >> 16) & 0xFFFF;
+			}
+#endif
 		}
 	}
 }
@@ -796,6 +806,12 @@ Error:
 
 void TileSet::QuickLoadMapped(void)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// No memory mapped files on AmigaOS: the tile set is read into memory.
+	QuickLoad();
+	return;
+#endif
+
 	MBCHAR  path[_MAX_PATH];
 	g_civPaths->FindFile(C3DIR_TILES, TileSetFile(), path);
 
@@ -849,7 +865,11 @@ void TileSet::QuickLoadMapped(void)
 		c3errors_FatalDialog("Tile Set", "Unable to load tileset.");
 		return;
 	}
+#if defined(CTP2_AMIGA_BUILD)
+	m_tileSetData = NULL;
+#else
 	m_tileSetData = (uint8 *)mmap(0, m_MMapSize, PROT_READ, MAP_PRIVATE, m_fd, 0);
+#endif
 #endif
 
 	if (m_tileSetData == NULL) {

@@ -42,6 +42,9 @@
 
 #include "c3.h"             // Precompiled header
 #include "aui_ui.h"         // Own declarations
+#if defined(__AUI_USE_AMIGA__)
+#include <vector>
+#endif
 
 #include "aui_action.h"
 #include "aui_blitter.h"
@@ -702,6 +705,55 @@ AUI_ERRCODE aui_UI::HideWindow( uint32 windowId )
 	return AUI_ERRCODE_OK;
 }
 
+#if defined(__AUI_USE_AMIGA__)
+namespace
+{
+	// Whether all of rects (in the window's coordinates) lie on the solid
+	// part of the window's stencil.
+	bool AllSolid(aui_Window *window, aui_DirtyList *rects)
+	{
+		aui_Stencil * stencil = window->GetStencil();
+		if (!stencil) return false;
+
+		RECT const whole = { 0, 0, window->Width(), window->Height() };
+		ListPos    position = rects->GetHeadPosition();
+		for (size_t k = rects->L(); k; k--)
+		{
+			RECT r = *rects->GetNext(position);
+			if (Rectangle_Clip(&r, const_cast<RECT *>(&whole))
+			&&  !aui_StencilRectIsSolid(stencil, r))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// A window ClipAndConsolidate marked dirty as a whole because a window
+	// below it changed, with what its own controls had changed before.
+	struct DirtiedFromBelow
+	{
+		aui_Window * window;
+		bool         ownChanges;
+		bool         ownSolid;
+	};
+	std::vector<DirtiedFromBelow> s_dirtiedFromBelow;
+
+	// The changed areas of the window ClipAndConsolidate is at, in its
+	// coordinates.
+	std::vector<RECT> s_changedBelow;
+
+	DirtiedFromBelow const * FindDirtiedFromBelow(aui_Window *window)
+	{
+		for (size_t k = 0; k < s_dirtiedFromBelow.size(); ++k)
+		{
+			if (s_dirtiedFromBelow[k].window == window) return &s_dirtiedFromBelow[k];
+		}
+		return NULL;
+	}
+}
+#endif
+
 AUI_ERRCODE aui_UI::ClipAndConsolidate(void)
 {
 	static aui_Window *window = NULL;
@@ -715,6 +767,9 @@ AUI_ERRCODE aui_UI::ClipAndConsolidate(void)
 	static aui_DirtyList *windowDirtyList = NULL;
 	static aui_Stencil *windowStencil = NULL;
 
+#if defined(__AUI_USE_AMIGA__)
+	s_dirtiedFromBelow.clear();
+#endif
 	m_dirtyList->Minimize();
 
 	if ( m_colorAreas || m_imageAreas )
@@ -785,6 +840,26 @@ AUI_ERRCODE aui_UI::ClipAndConsolidate(void)
 			windowDirtyList = window->m_dirtyList;
 			windowStencil = window->GetStencil();
 
+#if defined(__AUI_USE_AMIGA__)
+			// A shaped window (one with a stencil: the control panel) is
+			// redrawn whole when anything in it changes: the windows below
+			// mixed in, then all its controls drawn again, about 150 ms on a
+			// 68060, and the status bar text alone changes with every mouse
+			// move. Its controls stay on the solid part of the stencil, so:
+			// - a control that changed has drawn itself already; on the
+			//   solid part it goes to the screen as in an opaque window;
+			// - where it reaches a transparent part (a round button in its
+			//   square), and where the windows below changed (a window below
+			//   that marked this one dirty, or the screen's dirty areas),
+			//   the windows below are mixed in again there, and only there.
+			DirtiedFromBelow const * below = FindDirtiedFromBelow(window);
+			bool const fromBelow  = below != NULL;
+			bool const ownChanges = fromBelow ? below->ownChanges : windowDirtyList->L() > 0;
+			bool const ownSolid   = fromBelow ? below->ownSolid
+			                      : (!ownChanges || AllSolid(window, windowDirtyList));
+			bool screenChanged = false;
+#endif
+
 			ListPos dirtyPosition = m_dirtyList->GetHeadPosition();
 			size_t j;
 			for ( j = m_dirtyList->L(); j; j-- )
@@ -794,11 +869,75 @@ AUI_ERRCODE aui_UI::ClipAndConsolidate(void)
 				RECT convertedRect = *rect;
 				OffsetRect( &convertedRect, -windowX, -windowY );
 
+#if defined(__AUI_USE_AMIGA__)
+				if (convertedRect.left < windowWidth && convertedRect.right > 0
+				&&  convertedRect.top < windowHeight && convertedRect.bottom > 0)
+				{
+					screenChanged = true;
+				}
+#endif
 				window->AddDirtyRect( &convertedRect );
 			}
 
+#if defined(__AUI_USE_AMIGA__)
+			bool const onlySolidChanges = windowStencil && !fromBelow
+				&& !screenChanged && ownSolid;
+			if ( !window->IsOpaque() && windowDirtyList->L() && !onlySolidChanges )
+#else
 			if ( !window->IsOpaque() && windowDirtyList->L() )
+#endif
 			{
+#if defined(__AUI_USE_AMIGA__)
+				if (windowStencil)
+				{
+					// The controls stand as they are: the windows below are
+					// mixed in only where something changed, and only those
+					// areas go to the screen, not the whole window.
+					windowDirtyList->Minimize();
+
+					ListPos dirtyPos = windowDirtyList->GetHeadPosition();
+					for (size_t d = windowDirtyList->L(); d; d--)
+					{
+						RECT const * changed = windowDirtyList->GetNext(dirtyPos);
+
+						ListPos belowPosition = tailPosition;
+						for (j = m_childList->L() - i; j > 0; --j)
+						{
+							aui_Window *belowWindow =
+								(aui_Window *) m_childList->GetPrev(belowPosition);
+							if (belowWindow->IsHidden()) continue;
+
+							sint32 const left = belowWindow->X() - windowX;
+							sint32 const top  = belowWindow->Y() - windowY;
+							RECT rect =
+							{
+								left,
+								top,
+								left + belowWindow->Width(),
+								top + belowWindow->Height()
+							};
+
+							if (Rectangle_Clip(&rect, const_cast<RECT *>(changed)))
+							{
+								RECT srcRect = rect;
+								OffsetRect(&srcRect, -left, -top);
+
+								g_ui->TheBlitter()->StencilMixBlt16(
+									windowSurface,
+									&rect,
+									NULL,
+									&rect,
+									belowWindow->TheSurface(),
+									&srcRect,
+									windowStencil,
+									&rect);
+							}
+						}
+					}
+				}
+				else
+				{
+#endif
 #if 0
 				if(windowStencil) {
 					RECT stencilRect = {
@@ -888,14 +1027,35 @@ AUI_ERRCODE aui_UI::ClipAndConsolidate(void)
 				}
 #endif
 
+#if defined(__AUI_USE_AMIGA__)
 				if ( windowOpaqueControls )
 					window->DrawChildren();
+#else
+				if ( windowOpaqueControls )
+					window->DrawChildren();
+#endif
 
 				windowDirtyList->Flush();
 				windowDirtyList->AddRect( &windowRect );
+#if defined(__AUI_USE_AMIGA__)
+				}
+#endif
 			}
 			else
 				windowDirtyList->Minimize();
+
+#if defined(__AUI_USE_AMIGA__)
+			// What changed in this window, before the windows above take
+			// their part out: a shaped window above needs only those areas.
+			s_changedBelow.clear();
+			{
+				ListPos changedPos = windowDirtyList->GetHeadPosition();
+				for (size_t d = windowDirtyList->L(); d; d--)
+				{
+					s_changedBelow.push_back(*windowDirtyList->GetNext(changedPos));
+				}
+			}
+#endif
 
 			ListPos remainPosition = position;
 			for ( j = i - 1; j; j-- )
@@ -917,12 +1077,36 @@ AUI_ERRCODE aui_UI::ClipAndConsolidate(void)
 					if ( altered == AUI_ERRCODE_HANDLED
 					&&   !remainWindow->IsOpaque() )
 					{
+#if defined(__AUI_USE_AMIGA__)
+						if (!FindDirtiedFromBelow(remainWindow))
+						{
+							bool const own = remainWindow->m_dirtyList->L() > 0;
+							DirtiedFromBelow const entry =
+							{
+								remainWindow, own,
+								!own || AllSolid(remainWindow, remainWindow->m_dirtyList)
+							};
+							s_dirtiedFromBelow.push_back(entry);
+						}
+						if (remainWindow->GetStencil())
+						{
+							for (size_t d = 0; d < s_changedBelow.size(); ++d)
+							{
+								RECT changed = s_changedBelow[d];
+								OffsetRect(&changed, -left, -top);
+								remainWindow->AddDirtyRect(&changed);
+							}
+						}
+						else
+#endif
+						{
 						remainWindow->m_dirtyList->Flush();
 						remainWindow->AddDirtyRect(
 							0,
 							0,
 							remainWindow->Width(),
 							remainWindow->Height() );
+						}
 					}
 				}
 			}
@@ -1066,6 +1250,8 @@ AUI_ERRCODE aui_UI::Draw( void )
 	}
 #ifdef __AUI_USE_SDL__
 	SDLDrawScreen();
+#elif defined(__AUI_USE_AMIGA__)
+	AmigaDrawScreen();
 #endif
 	errcode = m_mouse->Resume();
 	Assert( errcode == AUI_ERRCODE_OK );

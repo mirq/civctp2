@@ -37,6 +37,7 @@
 #include "TileInfo.h"
 #include "tileset.h"
 #include "BaseTile.h"
+#include "ctp2_byteorder.h"
 
 BaseTile::BaseTile()
 :
@@ -102,8 +103,9 @@ BOOL BaseTile::Read(FILE *file)
 
 BOOL BaseTile::QuickRead(uint8 **dataPtr, BOOL mapped)
 {
-	m_tileNum      = *(uint16 *)(*dataPtr);
-	(*dataPtr)    += sizeof(uint16);
+	// Little-endian in the file, put in the machine's order in place
+	// (ctp2_byteorder.h; nothing to do on a little-endian machine).
+	m_tileNum      = ctp2_read_le16(dataPtr);
 
 	m_baseType     = *(uint8 *)(*dataPtr);
 	(*dataPtr)    += sizeof(uint8);
@@ -111,19 +113,19 @@ BOOL BaseTile::QuickRead(uint8 **dataPtr, BOOL mapped)
 	m_flags        = *(uint8 *)(*dataPtr);
 	(*dataPtr)    += sizeof(uint8);
 
-	m_tileDataLen  = *(uint16 *)(*dataPtr);
-	(*dataPtr)    += sizeof(uint16);
+	m_tileDataLen  = ctp2_read_le16(dataPtr);
 
 	m_tileData     = (Pixel16 *)(*dataPtr);
+	ctp2_swap_le16_array(*dataPtr, m_tileDataLen / 2);
 	(*dataPtr)    += (m_tileDataLen);
 
-	uint16 size    = *(uint16 *)(*dataPtr);
-	(*dataPtr)    += sizeof(uint16);
+	uint16 size    = ctp2_read_le16(dataPtr);
 
 	Pixel16		*hatData;
 	if (size > 0)
 	{
 		hatData = (Pixel16 *)(*dataPtr);
+		ctp2_swap_le16_array(*dataPtr, size / 2);
 		(*dataPtr) += size;
 	}
 	else

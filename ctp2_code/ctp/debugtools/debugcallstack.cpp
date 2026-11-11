@@ -63,6 +63,9 @@
 #include "log_off.h"
 #endif
 
+#if defined(CTP2_AMIGA_BUILD)
+#include <execinfo.h>       // os/amiga/include: no backtraces
+#endif
 #ifdef __linux__
 #include <execinfo.h>
 #include <dlfcn.h>

@@ -265,6 +265,24 @@ initialplayscreen_instantPress(aui_Control *control, uint32 action, uint32 data,
 	initialplayscreen_removeMyWindow(action);
 	g_civApp->PostStartGameAction();
 }
+#if defined(CTP2_AMIGA_BUILD)
+// As Launch on the new game screen, with the settings it last had: a game in
+// one key press instead of two screens (each a wait on a 68060).
+bool initialplayscreen_QuickStart(void)
+{
+	if (!g_c3ui || !s_initplayWindow || !g_c3ui->GetWindow(s_initplayWindow->Id()))
+	{
+		return false;
+	}
+
+	initialplayscreen_removeMyWindow(AUI_BUTTON_ACTION_EXECUTE);
+	g_theProfileDB->SetSaveNote("");
+	g_theProfileDB->SetTutorialAdvice(FALSE);
+	g_civApp->PostStartGameAction();
+	return true;
+}
+#endif
+
 void
 initialplayscreen_mapeditorPress(aui_Control *control, uint32 action, uint32 data, Cookie cookie )
 {
@@ -307,11 +325,11 @@ void initialplayscreen_tutorialPress(aui_Control *control, uint32 action, uint32
 {
 	if ( action != (uint32)AUI_BUTTON_ACTION_EXECUTE ) return;
 
-#if defined(USE_SDL)
+#if defined(CTP2_PORTABLE_BUILD)
 	bool legalGame = true;
-#else // USE_SDL
+#else // CTP2_PORTABLE_BUILD
 	bool legalGame = c3files_HasLegalCD();
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 	if (legalGame) {
 		if(initialplayscreen_removeMyWindow(action)) {
 			g_theProfileDB->SetTutorialAdvice(TRUE);

@@ -38,7 +38,9 @@
 #include "profileDB.h"        // g_theProfileDB
 #include "LanguageRecord.h"
 #include <clocale>
-#if defined(__AUI_USE_SDL__)
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_preferred_language
+#elif defined(__AUI_USE_SDL__)
 #include "SDL_locale.h"
 #endif
 
@@ -119,7 +121,7 @@ void CivPaths_CleanupCivPaths()
 CivPaths::CivPaths(AUI_ERRCODE &errcode)
 	:
 	m_hdPath(new MBCHAR[_MAX_PATH]),
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	m_cdPath(new MBCHAR[_MAX_PATH]),
 #endif
 	m_defaultPath(new MBCHAR[_MAX_PATH]),
@@ -169,12 +171,12 @@ CivPaths::CivPaths(AUI_ERRCODE &errcode)
 	}
 
 	fscanf(fin, "%s", m_hdPath);
-#if defined(USE_SDL)
+#if defined(CTP2_PORTABLE_BUILD)
 	MBCHAR dummy[_MAX_PATH];
 	fscanf(fin, "%s", dummy);
-#else // USE_SDL
+#else // CTP2_PORTABLE_BUILD
 	fscanf(fin, "%s", m_cdPath);
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 	fscanf(fin, "%s", m_defaultPath);
 	fscanf(fin, "%s", m_localizedPath);
 	fscanf(fin, "%s", m_dataPath);
@@ -188,9 +190,9 @@ CivPaths::CivPaths(AUI_ERRCODE &errcode)
 	fscanf(fin, "%s", m_saveClipsPath);
 
 	ReplaceFileSeperator(m_hdPath);
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	ReplaceFileSeperator(m_cdPath);
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 	ReplaceFileSeperator(m_defaultPath);
 	ReplaceFileSeperator(m_localizedPath);
 	ReplaceFileSeperator(m_dataPath);
@@ -243,9 +245,9 @@ CivPaths::~CivPaths()
 	delete [] m_curScenarioPath;
 	delete [] m_curScenarioPackPath;
 	delete [] m_hdPath;
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	delete [] m_cdPath;
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 	delete [] m_defaultPath;
 	delete [] m_localizedPath;
 	delete [] m_dataPath;
@@ -284,7 +286,7 @@ void CivPaths::CreateSaveFolders(const MBCHAR *path)
 	c3files_CreateDirectory(subFolderPath);
 }
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 void CivPaths::InitCDPath(void)
 {
 	MBCHAR tempPath[_MAX_PATH] = {0};
@@ -296,7 +298,7 @@ void CivPaths::InitCDPath(void)
 	sprintf(tempPath, "%c:%s%s", ctpcd, FILE_SEP, m_cdPath);
 	strcpy(m_cdPath, tempPath);
 }
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 
 MBCHAR *CivPaths::MakeSavePath(MBCHAR *fullPath, MBCHAR *s1, MBCHAR *s2, MBCHAR *s3)
 {
@@ -546,7 +548,7 @@ MBCHAR *CivPaths::FindFile(C3DIR dir, const MBCHAR *filename, MBCHAR *path,
 		return path;
 	}
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	// The CD will only have the original content
 	if (checkLocalizedPath && MakeAssetPath(fullPath, m_cdPath, m_dataPath, m_localizedPath, m_assetPaths[dir], filename))
 	{
@@ -559,7 +561,7 @@ MBCHAR *CivPaths::FindFile(C3DIR dir, const MBCHAR *filename, MBCHAR *path,
 		strcpy(path, fullPath);
 		return path;
 	}
-#endif // !USE_SDL
+#endif // !CTP2_PORTABLE_BUILD
 
 	if (check_prjfile &&
 	    ((dir == C3DIR_PATTERNS) ||
@@ -681,7 +683,7 @@ bool CivPaths::FindPath(C3DIR dir, int num, MBCHAR * path)
 					sprintf(tempPath, "%s%s%s%s%s%s%s", m_hdPath, FILE_SEP,
 					        m_dataPath, FILE_SEP, m_defaultPath, FILE_SEP, m_assetPaths[dir]);
 					break;
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 				case 6:
 					if (m_cdPath && m_cdPath[0])
 					{
@@ -696,7 +698,7 @@ bool CivPaths::FindPath(C3DIR dir, int num, MBCHAR * path)
 						    m_dataPath, FILE_SEP, m_defaultPath, FILE_SEP, m_assetPaths[dir]);
 					}
 					break;
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 				default:
 					return false;
 				} // switch
@@ -985,6 +987,27 @@ const LanguageRecord* CivPaths::FindLanguage()
 			{
 				buffer++;
 				break;
+			}
+		}
+	}
+#elif defined(__AUI_USE_AMIGA__)
+	// ENV:CTP2_LANGUAGE (an ISO code such as "de"), else the first of the
+	// Locale preferences' languages the game has.
+	for (int n = 0; ; ++n)
+	{
+		const char * iso = amiga_preferred_language(n);
+		if (!iso) break;
+
+		for(sint32 i = 0; i < g_theLanguageDB->NumRecords(); i++)
+		{
+			const LanguageRecord* lanRec = g_theLanguageDB->Get(i);
+
+			if(lanRec->GetDisabled() || lanRec->GetHidden())
+				continue;
+
+			if(strcmp(lanRec->GetIsoCode(), iso) == 0)
+			{
+				return lanRec;
 			}
 		}
 	}

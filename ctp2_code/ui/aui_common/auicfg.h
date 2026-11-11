@@ -27,7 +27,10 @@
 #ifndef __AUICFG_H__
 #define __AUICFG_H__
 
-#if defined(WIN32) && !defined(USE_SDL)
+#if defined(CTP2_AMIGA_BUILD)
+// AmigaOS (68060 or WarpOS): RTG screen, IDCMP input, AHI sound, no SDL.
+#define __AUI_USE_AMIGA__ 1
+#elif defined(WIN32) && !defined(USE_SDL)
 #define __AUI_USE_DIRECTX__ 1
 #define __AUI_USE_DIRECTMEDIA__ 1
 #else

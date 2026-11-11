@@ -56,7 +56,7 @@
 #include "rimutils.h"
 #include "targautils.h"
 #include "tiffutils.h"
-#ifdef __linux__
+#if defined(__linux__) || defined(CTP2_AMIGA_BUILD)
 #include "cifm.h"
 #else
 #define CI_FixName(a) a

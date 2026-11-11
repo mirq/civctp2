@@ -66,7 +66,7 @@ protected:
 
 };
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 
 class aui_Redbook : public aui_Music
 {
@@ -101,6 +101,6 @@ protected:
 
 };
 
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 
 #endif

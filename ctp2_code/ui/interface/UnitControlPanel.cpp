@@ -219,9 +219,62 @@ void UnitControlPanel::Update()
 			break;
 	}
 
+#if defined(CTP2_AMIGA_BUILD)
+	// This runs on every frame (ControlPanelWindow::Idle), and a redraw of the
+	// group redraws the whole control panel, a shaped window: about 150 ms on
+	// a 68060. The group is drawn again only when what it shows changes: the
+	// selection, and each shown unit's health, movement, fuel and cargo.
+	if (!m_unitDisplayGroup->IsHidden())
+	{
+		static std::vector<double> s_shown;
+		std::vector<double>        shown;
+
+		shown.push_back(m_currentMode);
+		shown.push_back(m_armySelectionUnit);
+
+		CellUnitList units;
+		Army const   army = GetSelectedArmy();
+		shown.push_back(army.m_id);
+		if (army.IsValid())
+		{
+			for (sint32 i = 0; i < army.Num(); ++i)
+			{
+				units.Insert(army[i]);
+			}
+		}
+		if (m_currentMode == MULTIPLE_SELECTION && g_selected_item && g_theWorld)
+		{
+			MapPoint const pos = g_selected_item->GetCurSelectPos();
+			shown.push_back(pos.x);
+			shown.push_back(pos.y);
+			g_theWorld->GetCell(pos)->GetArmy(units);
+		}
+
+		for (sint32 i = 0; i < units.Num(); ++i)
+		{
+			Unit const & unit = units[i];
+			shown.push_back(unit.m_id);
+			if (!unit.IsValid()) continue;
+
+			sint32 fuel = -1, maxFuel = -1;
+			unit.GetUsedFuel(fuel, maxFuel);
+			shown.push_back(unit.GetHP());
+			shown.push_back(unit.GetMovementPoints());
+			shown.push_back(fuel);
+			shown.push_back(unit.GetDBRec()->HasCargoData() ? unit->GetNumCarried() : -1);
+		}
+
+		if (shown != s_shown)
+		{
+			s_shown.swap(shown);
+			m_unitDisplayGroup->ShouldDraw();
+		}
+	}
+#else
 	if (!m_unitDisplayGroup->IsHidden()) {
 		m_unitDisplayGroup->ShouldDraw();
 	}
+#endif
 
 	UpdateOrderButtons();
 }

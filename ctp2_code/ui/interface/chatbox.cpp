@@ -75,6 +75,10 @@
 #if defined(__AUI_USE_SDL__)
 #include "SDL2/SDL.h"
 #include "civ3_main.h"
+#elif defined(__AUI_USE_AMIGA__)
+#include "amiga_platform.h"
+#include "c3ui.h"
+extern C3UI *g_c3ui;
 #endif
 
 #if defined (_DEBUG) || defined(USE_LOGGING)
@@ -299,7 +303,7 @@ BOOL ChatWindow::CheckForEasterEggs(const MBCHAR *s)
 	{
 		extern BOOL gDone;
 
-#if !defined(__AUI_USE_SDL__)
+#if !defined(__AUI_USE_SDL__) && !defined(__AUI_USE_AMIGA__)
 		MSG	msg;
 #endif
 
@@ -353,6 +357,29 @@ BOOL ChatWindow::CheckForEasterEggs(const MBCHAR *s)
 						i = n;
 					}
 				}
+#elif defined(__AUI_USE_AMIGA__)
+				// ESC (raw key 0x45) stops the run; CTRL-C or a quit ends
+				// the game. The map shows how far the AI got.
+				AmigaEvent event;
+				while (!g_letUIProcess && amiga_input_poll(&event))
+				{
+					if (event.type == AMIGA_EV_QUIT)
+					{
+						gDone = TRUE;
+					}
+
+					if (event.type == AMIGA_EV_KEY && event.down && event.code == 0x45)
+					{
+						i = n;
+					}
+				}
+				if (amiga_break_requested())
+				{
+					gDone = TRUE;
+					i = n;
+				}
+				amiga_audio_update();
+				g_c3ui->AmigaDrawScreen();
 #else
 				// Make it abort if you press for instance the ESC key
 				// Windows code start

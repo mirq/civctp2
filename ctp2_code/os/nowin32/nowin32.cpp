@@ -16,7 +16,11 @@
 #endif
 #include <unistd.h>
 #include <ctype.h>
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"
+#else
 #include <SDL2/SDL_timer.h>
+#endif
 
 #include "windows.h"
 
@@ -32,6 +36,14 @@ char* _fullpath(char* absolute, const char* relative, size_t bufsize)
 	char *dest = (absolute == NULL) ? ret : absolute;
 	size_t size = (absolute == NULL) ? MAX_PATH : bufsize;
 
+#if defined(CTP2_AMIGA_BUILD)
+	// AmigaDOS: "Volume:dir/file" is absolute, the rest is relative to the
+	// current directory (the game's drawer).
+	if (!amiga_fullpath(relative, dest, size))
+	{
+		return NULL;
+	}
+#else
 	if(!relative)
 	{
 		getcwd(dest, size - 1);
@@ -103,6 +115,7 @@ char* _fullpath(char* absolute, const char* relative, size_t bufsize)
 #error "_fullpath() not implemented for this platform."
 #endif
 	}
+#endif // CTP2_AMIGA_BUILD
 
 	if(absolute)
 		return dest;
@@ -138,7 +151,11 @@ void _splitpath( const char *path,
 
 uint32 GetTickCount()
 {
+#if defined(CTP2_AMIGA_BUILD)
+	return amiga_ticks_ms();
+#else
 	return SDL_GetTicks();
+#endif
 }
 
 sint32 MessageBox(HWND parent, const CHAR* msg, const CHAR* title, sint32 flags)
@@ -256,10 +273,66 @@ sint32 MessageBox(HWND parent, const CHAR* msg, const CHAR* title, sint32 flags)
 		selectedButton = buttonData[0].buttonid;
 	}
 	return selectedButton;
+#elif defined(CTP2_AMIGA_BUILD)
+	// An Intuition requester; its buttons in the order of the MB_ type.
+	switch (flags & 7)
+	{
+		case MB_OKCANCEL:
+			return amiga_message_box(title, msg, "OK|Cancel") == 1 ? IDOK : IDCANCEL;
+		case MB_YESNO:
+			return amiga_message_box(title, msg, "Yes|No") == 1 ? IDYES : IDNO;
+		case MB_YESNOCANCEL:
+		{
+			int const r = amiga_message_box(title, msg, "Yes|No|Cancel");
+			return r == 1 ? IDYES : (r == 2 ? IDNO : IDCANCEL);
+		}
+		case MB_RETRYCANCEL:
+			return amiga_message_box(title, msg, "Retry|Cancel") == 1 ? IDRETRY : IDCANCEL;
+		case MB_ABORTRETRYIGNORE:
+		{
+			int const r = amiga_message_box(title, msg, "Abort|Retry|Ignore");
+			return r == 1 ? IDABORT : (r == 2 ? IDRETRY : IDIGNORE);
+		}
+		default:
+			amiga_message_box(title, msg, "OK");
+			return IDOK;
+	}
 #else
 	return IDFAIL;
 #endif
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+namespace
+{
+	struct SyncThread
+	{
+		DWORD exitCode;
+	};
+}
+
+HANDLE CreateThread(void *, size_t, LPTHREAD_START_ROUTINE start, LPVOID parameter,
+                    DWORD, DWORD *threadId)
+{
+	SyncThread * thread = new SyncThread;
+	thread->exitCode = start ? start(parameter) : 0;
+	if (threadId) *threadId = 1;
+	return reinterpret_cast<HANDLE>(thread);
+}
+
+BOOL GetExitCodeThread(HANDLE handle, DWORD *exitCode)
+{
+	if (!handle) return FALSE;
+	if (exitCode) *exitCode = reinterpret_cast<SyncThread *>(handle)->exitCode;
+	return TRUE;
+}
+
+BOOL CloseHandle(HANDLE handle)
+{
+	delete reinterpret_cast<SyncThread *>(handle);
+	return TRUE;
+}
+#endif
 
 void SubtractRect(RECT* dst, const RECT* r1, const RECT* r2)
 {
@@ -391,13 +464,13 @@ void SetRect(RECT* R, int left, int top, int right, int bottom)
 	R->top = top;
 	R->bottom = bottom;
 }
-#ifndef stricmp
+#if !defined(stricmp) && !defined(CTP2_AMIGA_060) && !defined(CTP2_AMIGA_MOS) // libnix has it
 int stricmp(const char* s1, const char* s2)
 {
 	return strcasecmp(s1, s2);
 }
 #endif
-#ifndef strnicmp
+#if !defined(strnicmp) && !defined(CTP2_AMIGA_060) && !defined(CTP2_AMIGA_MOS) // libnix has it
 int strnicmp(const char *str1, const char *str2, size_t n)
 {
 	return strncasecmp(str1, str2, n);

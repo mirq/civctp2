@@ -899,3 +899,7 @@ usercritmsgs.txt
 userkeymap.txt
 userprofile.txt
 
+
+# Amiga builds (Makefile.amiga68k, Makefile.warpos): objects, generated sources, host tools, executables
+/build/
+/bin/amiga/

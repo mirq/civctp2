@@ -2492,12 +2492,29 @@ void RadarMap::MouseRGrabInside(aui_MouseEvent * data)
 AUI_ERRCODE RadarMap::Idle()
 {
 	static uint32 lastDraw = 0;
+#if defined(CTP2_AMIGA_BUILD)
+	// Ten copies a second of a picture that seldom changes are a tenth of a
+	// 68060 (each about 50 ms). Four a second while the view moves (scrolling
+	// moves it on every step), else one: the map's own changes (units,
+	// cities, exploration) show within that.
+	static RECT lastView = { 0, 0, 0, 0 };
+	bool const viewMoved = lastView.left != m_mapViewRect.left || lastView.top != m_mapViewRect.top
+	                    || lastView.right != m_mapViewRect.right || lastView.bottom != m_mapViewRect.bottom;
+	if (GetTickCount() - lastDraw > (viewMoved ? 250u : 1000u)) {
+		lastDraw = GetTickCount();
+		lastView = m_mapViewRect;
+	}
+	else {
+		return AUI_ERRCODE_OK;
+	}
+#else
 	if (GetTickCount() - lastDraw > 100) {
 		lastDraw = GetTickCount();
 	}
 	else {
 		return AUI_ERRCODE_OK;
 	}
+#endif
 
 	DrawThis(NULL, 0, 0);
 

@@ -33,8 +33,10 @@
 
 #include "aui.h"
 #include "aui_surface.h"
+#if !defined(__AUI_USE_AMIGA__)
 #include "aui_sdlsurface.h"
 #include "aui_directsurface.h"
+#endif
 #include "aui_rectangle.h"
 
 #include "c3blitter.h"
@@ -363,7 +365,7 @@ AUI_ERRCODE C3Blitter::Blt16To16FastMMX(
 	   					shr ecx,1
 	   					rep movsw
 					}
-#elif!defined(_MSC_VER) // _MSCVER
+#elif !defined(_MSC_VER) && !defined(CTP2_AMIGA_BUILD) // _MSCVER (x86 only; never called on the Amiga: CheckMMXTechnology)
 //					Assert(0);
                     //fprintf(stderr, "%s L%d: Using Blt16To16FastMMX!\n", __FILE__, __LINE__);
                     __asm__ (
@@ -612,7 +614,7 @@ AUI_ERRCODE C3Blitter::Blt16To16FastFPU(
 
 bool C3Blitter::CheckMMXTechnology(void)
 {
-#if defined(__linux__)
+#if defined(__linux__) || defined(CTP2_AMIGA_BUILD)
 	return false;
 #else
     bool retval = true;

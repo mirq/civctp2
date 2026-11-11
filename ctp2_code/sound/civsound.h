@@ -48,11 +48,7 @@
 #undef STREAM_TYPE
 #endif
 
-#if defined(USE_SDL)
-#include <SDL2/SDL_mixer.h>
-#else
-#include "mss.h"
-#endif
+#include "soundmixer.h"
 
 class CivSound {
 public:
@@ -60,7 +56,7 @@ public:
 	~CivSound();
 
 	const uint32 GetAssociatedObject() const;
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	HAUDIO       GetHAudio() const;
 #else
 	Mix_Chunk    *GetAudio() const;
@@ -77,7 +73,7 @@ public:
 	void         SetVolume(const sint32 &volume);
 
 private:
-#if !defined(USE_SDL)
+#if !defined(CTP2_USE_MIX_API)
 	HAUDIO			m_hAudio;
 #else
 	Mix_Chunk      *m_Audio;

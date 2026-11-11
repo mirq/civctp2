@@ -8,6 +8,8 @@
 #include "aui_directblitter.h"
 #elif defined(__AUI_USE_SDL__)
 #include "aui_sdlblitter.h"
+#elif defined(__AUI_USE_AMIGA__)
+#include "aui_amigablitter.h"
 #endif // __AUI_USE_SDL__
 
 class aui_Surface;
@@ -26,6 +28,8 @@ typedef  AUI_ERRCODE (C3Blitter::*_C3BLIT_PROTO)(	aui_Surface *destSurf,
 class C3Blitter : public aui_DirectBlitter
 #elif defined(__AUI_USE_SDL__)
 class C3Blitter : public aui_SDLBlitter
+#elif defined(__AUI_USE_AMIGA__)
+class C3Blitter : public aui_AmigaBlitter
 #endif
 {
 public:

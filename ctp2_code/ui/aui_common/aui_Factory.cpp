@@ -29,6 +29,11 @@
 #include "c3.h"
 #include "aui_Factory.h"
 
+#if defined(__AUI_USE_AMIGA__)
+#include "aui_amigasurface.h"
+#include "aui_amigamouse.h"
+#include "aui_amigakeyboard.h"
+#else
 #include "aui_directsurface.h"
 #include "aui_directmouse.h"
 #include "aui_directkeyboard.h"
@@ -36,6 +41,7 @@
 #include "aui_sdlsurface.h"
 #include "aui_sdlmouse.h"
 #include "aui_sdlkeyboard.h"
+#endif
 
 #include "c3ui.h"   // C3UI
 
@@ -56,6 +62,9 @@ aui_Factory::new_Surface(AUI_ERRCODE &retval,
 
 	surface = new aui_SDLSurface(&retval, width, height, g_c3ui->BitsPerPixel(), g_c3ui->DD(),
 	                             isPrimary, useVideoMemory, takeOwnership);
+#elif defined(__AUI_USE_AMIGA__)
+	aui_AmigaSurface *surface = new aui_AmigaSurface(&retval, width, height, g_c3ui->BitsPerPixel(),
+	                                                 isPrimary);
 #elif defined(__AUI_USE_DIRECTX__)
 	aui_DirectSurface *surface = 0;
 
@@ -76,6 +85,8 @@ aui_Factory::new_Mouse(AUI_ERRCODE  &retval,
 {
 #if defined(__AUI_USE_SDL__)
 	aui_SDLMouse *mouse = new aui_SDLMouse(&retval, ldlBlock, useExclusiveMode);
+#elif defined(__AUI_USE_AMIGA__)
+	aui_AmigaMouse *mouse = new aui_AmigaMouse(&retval, ldlBlock, useExclusiveMode);
 #elif defined(__AUI_USE_DIRECTX__)
 	aui_DirectMouse *mouse = new aui_DirectMouse(&retval, ldlBlock, useExclusiveMode);
 #endif
@@ -89,6 +100,8 @@ aui_Factory::new_Keyboard(AUI_ERRCODE &retval)
 {
 #if defined(__AUI_USE_SDL__)
 	aui_SDLKeyboard *keyboard = new aui_SDLKeyboard(&retval);
+#elif defined(__AUI_USE_AMIGA__)
+	aui_AmigaKeyboard *keyboard = new aui_AmigaKeyboard(&retval);
 #elif defined(__AUI_USE_DIRECTX__)
 	aui_DirectKeyboard *keyboard = new aui_DirectKeyboard(&retval);
 #endif

@@ -1,0 +1,161 @@
+# Call to Power II for WarpOS (PowerPC) with an RTG card.
+#
+#   make -f Makefile.warpos -j$(nproc)      -> bin/amiga/ctp2.wos
+#
+# Built by ppc-amigaos-gcc 8.4 (adtools) with the MOS2WOS WarpOS SDK overlay,
+# through MiniGL's common file, which holds the toolchain paths and the ET_REL
+# contract (no MiniGL is linked). The link is a relocatable ELF
+# (build/warpos/ctp2.warpelf), which elf2warpos (os/amiga/warpos/elf2warpos,
+# built here with the host's cc) turns into the WarpOS executable. The
+# generated sources and the platform layer are
+# shared with Makefile.amiga68k (ctp2_code/os/amiga); CTP2_AMIGA_WOS marks
+# what only WarpOS does (the clock, the cache flushes).
+#
+# C++ on WarpOS (as DOSBox-WOS, ~/dosbox_warpos/makefile.wos_gcc):
+# - no exceptions: .eh_frame needs R_PPC_REL32, which the converter refuses;
+# - every object and libstdc++ lose their COMDAT .group sections (objcopy
+#   -R .group), or the relocatable link keeps thousands of sections;
+# - the SDK's bits/gthr-default.h declares a 64-byte mutex where its prebuilt
+#   libstdc++.a has 60 bytes: a patched copy (made below) comes first.
+
+MGL_DIR ?= /home/mirek/MiniGL_WOS_V19_mglQ3
+CPU     ?= 603e
+include $(MGL_DIR)/Makefile.wos.gcc.common
+
+# The converter, a host program. Its 68k stub (stub.s) is kept assembled in
+# stub.inc; `make -f Makefile.warpos elf2warpos-stub` remakes that (68k tools).
+HOSTCC        ?= cc
+E2W_DIR       := ctp2_code/os/amiga/warpos/elf2warpos
+ELF2WARPOS    := build/host/elf2warpos
+M68K_PREFIX   ?= /opt/amiga/bin/m68k-amigaos-
+
+CXX     := $(WOS_CROSS)g++
+OBJCOPY := $(WOS_CROSS)objcopy
+UNGROUP  = $(OBJCOPY) -R .group
+AMIGA_CXX_POST = $(UNGROUP)
+
+SHELL := /bin/bash
+
+CTP2   := ctp2_code
+GEN    := build/amiga-gen
+OBJDIR := build/warpos
+ELF    := $(OBJDIR)/ctp2.warpelf
+TARGET := bin/amiga/ctp2.wos
+
+.DEFAULT_GOAL := all
+
+include $(CTP2)/os/amiga/gen.mk
+include $(CTP2)/os/amiga/sources.mk
+include $(CTP2)/os/amiga/common.mk
+
+WOS_ETREL_LDSCRIPT := $(CTP2)/os/amiga/warpos/warpos-etrel.ld
+
+# The SDK puts its SDL 1.2 on the include path: off it, so nothing compiles
+# against it by accident.
+WOS_CPPFLAGS_NOSDL := $(subst -isystem $(WOS_SDK_ROOT)/include/sdl,,$(WOS_CPPFLAGS))
+
+# The SDK header fixed to the library's 60-byte mutex.
+GTHR_DIR    := $(OBJDIR)/include
+GTHR_HEADER := $(GTHR_DIR)/bits/gthr-default.h
+GTHR_SOURCE := $(WOS_SDK_ROOT)/newlib/include/c++/bits/gthr-default.h
+
+AMIGA_DEFS += -DCTP2_AMIGA_WOS=1
+
+# -fsigned-char: char is unsigned on the PPC, signed on x86 and the 68k.
+# -fno-common, -msdata=none -G0: what the ET_REL check and the converter take.
+OPT_FLAGS  ?= -O2
+WOS_FLAGS  := $(WOS_ARCH_CFLAGS) -fsigned-char -fno-common -msdata=none -G0
+
+CFLAGS   := $(WOS_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) \
+            -I$(GTHR_DIR) $(AMIGA_INCS) $(WOS_CPPFLAGS_NOSDL) $(AMIGA_C_FLAGS) $(EXTRA_CFLAGS)
+CXXFLAGS := $(WOS_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) \
+            -I$(GTHR_DIR) $(AMIGA_INCS) $(WOS_CPPFLAGS_NOSDL) $(AMIGA_CXX_FLAGS) \
+            -fno-threadsafe-statics -fno-use-cxa-atexit $(EXTRA_CXXFLAGS)
+
+WOS_OBJECTS := $(AMIGA_OBJECTS) $(OBJDIR)/os/amiga/warpos/wos_runtime.o
+
+LIBSTDCXX_UNGROUPED := $(OBJDIR)/libstdc++_ungrouped.a
+
+# A changed flag rebuilds every object.
+BUILD_FLAGS_STAMP := $(OBJDIR)/.build-flags
+$(shell mkdir -p $(OBJDIR); f='$(CXXFLAGS) $(CFLAGS)'; [ "$$(cat $(BUILD_FLAGS_STAMP) 2>/dev/null)" = "$$f" ] || printf '%s' "$$f" > $(BUILD_FLAGS_STAMP))
+
+.PHONY: all objects clean check-tools elf2warpos-stub
+all: check-tools $(TARGET)
+objects: $(WOS_OBJECTS)
+
+check-tools:
+	@test -x "$(CXX)" || { echo "missing compiler $(CXX)"; exit 1; }
+	@test -f "$(WOS_STARTFILE)" || { echo "missing $(WOS_STARTFILE)"; exit 1; }
+
+$(ELF2WARPOS): $(E2W_DIR)/elf2warpos.c $(E2W_DIR)/stub.inc
+	@mkdir -p $(dir $@)
+	@echo "  HOSTCC $@"
+	@$(HOSTCC) -O2 -Wall -std=c99 -o $@ $<
+
+elf2warpos-stub:
+	@mkdir -p build/host
+	$(M68K_PREFIX)as -m68020 --register-prefix-optional $(E2W_DIR)/stub.s -o build/host/stub.o
+	$(M68K_PREFIX)objcopy -O binary -j .text build/host/stub.o build/host/stub.bin
+	@{ echo "/* Generated from stub.s by Makefile.warpos (target elf2warpos-stub): do not edit. */"; \
+	   od -An -v -tx1 build/host/stub.bin | sed -e 's/^ *//' -e 's/\([0-9a-f][0-9a-f]\)/0x\1,/g' -e 's/^/  /' -e 's/, *$$/,/'; } \
+	   > $(E2W_DIR)/stub.inc
+
+$(GTHR_HEADER): $(GTHR_SOURCE)
+	@mkdir -p $(dir $@)
+	@sed -e 's/{ {{ 0 }}, 0 }/{ {{ 0 }} }/' -e '/^[[:space:]]*int incond;/d' $< > $@
+	@! grep -q incond $@ || { echo "gthr-default.h: could not remove incond"; exit 1; }
+
+$(OBJDIR)/%.o: $(CTP2)/%.cpp $(BUILD_FLAGS_STAMP) $(GTHR_HEADER) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) $(AMIGA_FILE_FLAGS_$*) -c $< -o $@
+	@$(UNGROUP) $@
+
+$(OBJDIR)/%.o: $(CTP2)/%.c $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) $(CFLAGS) $(AMIGA_FILE_FLAGS_$*) -c $< -o $@
+
+$(OBJDIR)/gen/%.o: $(GEN)/%.cpp $(BUILD_FLAGS_STAMP) $(GTHR_HEADER) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) -c $< -o $@
+	@$(UNGROUP) $@
+
+$(OBJDIR)/gen/%.o: $(GEN)/%.c $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+$(LIBSTDCXX_UNGROUPED): $(WOS_SDK_ROOT)/lib/libstdc++.a
+	@mkdir -p $(dir $@)
+	$(UNGROUP) $< $@
+
+# startupwos.o FIRST: the loader jumps to the first code hunk. The full link
+# keeps its debug information beside the objects for addr2line; the converter
+# gets it without (and never without symbols). --wrap=fopen: every fopen goes
+# through os/amiga/amiga_posix.c, which makes the name an AmigaDOS one (c3.h's
+# fopen macro is undone by <cstdio>).
+DEBUG_ELF := $(OBJDIR)/ctp2.debug.elf
+
+$(DEBUG_ELF): $(WOS_OBJECTS) $(LIBSTDCXX_UNGROUPED) $(WOS_ETREL_LDSCRIPT)
+	@echo "  LD  $@"
+	@$(LD) $(WOS_LINK_FLAGS) --wrap=fopen $(WOS_LIBRARY_DIRS) -o $@ \
+		$(WOS_STARTFILE) $(WOS_OBJECTS) $(LIBSTDCXX_UNGROUPED) $(WOS_RUNTIME_LIBS) $(WOS_ENDFILE)
+
+$(ELF): $(DEBUG_ELF)
+	@$(OBJCOPY) --strip-debug $< $@
+	$(call WOS_VALIDATE_ETREL,$@)
+
+$(TARGET): $(ELF) $(ELF2WARPOS)
+	@mkdir -p $(dir $@)
+	@$(ELF2WARPOS) $< $@
+
+# Drop an output that failed the ET_REL check, so the next make links again.
+.DELETE_ON_ERROR:
+
+clean:
+	rm -rf $(OBJDIR) $(TARGET)
+
+-include $(WOS_OBJECTS:.o=.d)

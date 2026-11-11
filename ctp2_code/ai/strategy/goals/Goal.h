@@ -316,9 +316,9 @@ namespace std {
 template<>
 struct greater<Goal_ptr> : binary_function<Goal_ptr, Goal_ptr, bool>
 {
-	bool operator()(const Goal_ptr _X, const Goal_ptr _Y) const
+	bool operator()(const Goal_ptr lhs, const Goal_ptr rhs) const
 	{
-		return _X->Get_Matching_Value() > _Y->Get_Matching_Value();
+		return lhs->Get_Matching_Value() > rhs->Get_Matching_Value();
 	}
 };
 }

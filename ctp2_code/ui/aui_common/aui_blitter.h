@@ -19,6 +19,11 @@ struct aui_SpanList;
 
 struct aui_Stencil;
 aui_Stencil *aui_CreateStencil(aui_Surface *pSurface);
+#if defined(__AUI_USE_AMIGA__)
+// Whether rect (in the stencil's coordinates, inside it) holds no transparent
+// pixel of the stencil: what is drawn there needs nothing from below.
+bool aui_StencilRectIsSolid(const aui_Stencil *stencil, const RECT &rect);
+#endif
 
 
 

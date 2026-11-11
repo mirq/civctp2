@@ -48,9 +48,9 @@ class LanguageRecord;
 class CivPaths {
 private:
 	MBCHAR *m_hdPath;
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	MBCHAR *m_cdPath;
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
 	MBCHAR *m_defaultPath;
 	MBCHAR *m_localizedPath;
 
@@ -82,7 +82,7 @@ public:
 
 	void CreateSaveFolders(const MBCHAR *path);
 
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	void InitCDPath(void);
 #endif
 

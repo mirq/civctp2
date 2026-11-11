@@ -1039,7 +1039,12 @@ sint32 Advances::FindLevel
 {
 	if (fromLevel > g_theAdvanceDB->NumRecords())
 	{
+#if defined(__EXCEPTIONS)
 		throw std::overflow_error(REPORT_ADVANCE_LOOP);
+#else
+		// Without exceptions (the Amiga builds): -1 marks the loop.
+		return -1;
+#endif
 	}
 
 	sint32	maxLevel = fromLevel;
@@ -1051,10 +1056,20 @@ sint32 Advances::FindLevel
 
 		if (rec == prereqRecord)
 		{
+#if defined(__EXCEPTIONS)
 			throw std::overflow_error(REPORT_ADVANCE_SELF);
+#else
+			return -1;
+#endif
 		}
 
 		sint32 const level	= FindLevel(prereqRecord, 1 + fromLevel);
+#if !defined(__EXCEPTIONS)
+		if (level < 0)
+		{
+			return -1;
+		}
+#endif
 		if (level > maxLevel)
 			maxLevel = level;
 	}
@@ -1074,6 +1089,7 @@ void Advances::DebugDumpTree()
 	for(sint32 i = 0; i < m_size; i++)
 	{
 		AdvanceRecord* rec = g_theAdvanceDB->Access(i);
+#if defined(__EXCEPTIONS)
 		try
 		{
 			level[i] = FindLevel(rec);
@@ -1083,6 +1099,14 @@ void Advances::DebugDumpTree()
 			level[i]		= LEVEL_LOOPED;
 			isLoopDetected	= true;
 		}
+#else
+		level[i] = FindLevel(rec);
+		if (level[i] < 0)
+		{
+			level[i]		= LEVEL_LOOPED;
+			isLoopDetected	= true;
+		}
+#endif
 		if(level[i] > numLevels - 1)
 			numLevels = level[i] + 1;
 	}

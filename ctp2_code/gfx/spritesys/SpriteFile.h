@@ -109,6 +109,7 @@ typedef struct
 
 #include "c3.h"
 #include "Action.h"
+#include "ctp2_byteorder.h"
 
 class Sprite;
 class FacedSprite;
@@ -190,6 +191,47 @@ public:
 	SPRITEFILEERR	WriteData(uint32 data);
 
 	SPRITEFILEERR	ReadData(void *data, size_t bytes);
+
+	// Sprite files are little-endian (written on x86): these read a value,
+	// an array of them, POINTs or 16-bit pixel data and put it in the
+	// machine's byte order (nothing to do on a little-endian machine).
+	template <typename T> SPRITEFILEERR ReadValueLE(T & value)
+	{
+		SPRITEFILEERR const err = ReadData(&value, sizeof(value));
+		ctp2_swap_le(value);
+		return err;
+	}
+
+	template <typename T> SPRITEFILEERR ReadArrayLE(T * values, size_t count)
+	{
+		SPRITEFILEERR const err = ReadData(values, sizeof(T) * count);
+		for (size_t i = 0; i < count; ++i) ctp2_swap_le(values[i]);
+		return err;
+	}
+
+	SPRITEFILEERR ReadPointsLE(POINT * points, size_t count)
+	{
+		SPRITEFILEERR const err = ReadData(points, sizeof(POINT) * count);
+		for (size_t i = 0; i < count; ++i)
+		{
+			ctp2_swap_le(points[i].x);
+			ctp2_swap_le(points[i].y);
+		}
+		return err;
+	}
+
+	// Frame data (row table, run tags, pixels) is all 16-bit words.
+	SPRITEFILEERR ReadPixelsLE(void * data, size_t bytes)
+	{
+		SPRITEFILEERR const err = ReadData(data, bytes);
+		SwapPixelsLE(data, bytes);
+		return err;
+	}
+
+	static void SwapPixelsLE(void * data, size_t bytes)
+	{
+		ctp2_swap_le16_array(data, bytes / 2);
+	}
 
 	long  			GetFilePos(void);
 	void			SetFilePos(long pos);

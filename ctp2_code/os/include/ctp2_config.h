@@ -13,6 +13,22 @@
 #error "Unsupported build environment."
 #endif
 
+// CTP2_PORTABLE_BUILD: a build without the original Windows-only parts (the
+// CD check and CD audio, MCI, the Miles Sound System, GDI): the SDL builds and
+// the Amiga builds (ctp2_code/os/amiga). Code that only needs "not the
+// original Windows build" tests this rather than USE_SDL.
+#if defined(USE_SDL) || defined(CTP2_AMIGA_BUILD)
+#define CTP2_PORTABLE_BUILD 1
+#endif
+
+// CTP2_AMIGA_STDIO_BUFFER: the buffer the Amiga builds give the streams the
+// game makes unbuffered (setvbuf _IONBF). libnix's fread and fwrite move an
+// unbuffered stream one byte per Read()/Write() call: an 800x600 TGA took
+// over two minutes on a 68060.
+#if defined(CTP2_AMIGA_BUILD)
+#define CTP2_AMIGA_STDIO_BUFFER 16384
+#endif
+
 /// \def UNREACHABLE_RETURN(a_Value)
 /// Mark a return statement as unreachable.
 /// Compiler workaround for MSVC7, which has no knowledge about functions

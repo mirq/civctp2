@@ -40,6 +40,7 @@
 sint32 aui_Surface::m_surfaceRefCount = 0;
 #if defined(__AUI_USE_SDL__)
 SDL_mutex *		aui_Surface::m_cs = 0;
+#elif defined(__AUI_USE_AMIGA__)
 #else
 CRITICAL_SECTION	aui_Surface::m_cs;
 #endif
@@ -72,7 +73,7 @@ aui_Surface::aui_Surface(
 	m_saveBuffer = buffer;
 	if (!m_saveBuffer)
 	{
-#if !defined(__AUI_USE_SDL__)
+#if !defined(__AUI_USE_SDL__) && !defined(__AUI_USE_AMIGA__)
 
 		if(hdc == NULL)
 			hdc = ::GetDC( g_ui->TheHWND() );
@@ -152,6 +153,7 @@ AUI_ERRCODE aui_Surface::InitCommon( sint32 width, sint32 height, sint32 bpp, BO
 	{
 #if defined(__AUI_USE_SDL__)
 		m_cs = SDL_CreateMutex();
+#elif defined(__AUI_USE_AMIGA__)
 #else
 		InitializeCriticalSection(&m_cs);
 #endif
@@ -171,7 +173,7 @@ aui_Surface::~aui_Surface()
 {
 	if ( m_allocated )
 	{
-#ifndef __AUI_USE_SDL__
+#if !defined(__AUI_USE_SDL__) && !defined(__AUI_USE_AMIGA__)
 		SelectObject( m_hdc, m_holdbitmap );
 		DeleteObject( m_hbitmap );
 		DeleteObject( m_hdc );
@@ -190,6 +192,7 @@ aui_Surface::~aui_Surface()
 #if defined(__AUI_USE_SDL__)
 		SDL_DestroyMutex(m_cs);
 		m_cs = 0;
+#elif defined(__AUI_USE_AMIGA__)
 #else
 		DeleteCriticalSection(&m_cs);
 #endif
@@ -442,6 +445,7 @@ AUI_ERRCODE aui_Surface::ManipulateLockList( RECT *rect, LPVOID *buffer, AUI_SUR
 	AUI_ERRCODE errcode = AUI_ERRCODE_OK;
 #if defined(__AUI_USE_SDL__)
 	SDL_mutexP(m_cs);
+#elif defined(__AUI_USE_AMIGA__)
 #else
 	EnterCriticalSection(&m_cs);
 #endif
@@ -527,6 +531,7 @@ AUI_ERRCODE aui_Surface::ManipulateLockList( RECT *rect, LPVOID *buffer, AUI_SUR
 
 #if defined(__AUI_USE_SDL__)
 	SDL_mutexV(m_cs);
+#elif defined(__AUI_USE_AMIGA__)
 #else
 	LeaveCriticalSection(&m_cs);
 #endif

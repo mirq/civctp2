@@ -134,6 +134,8 @@ protected:
 	static sint32 m_surfaceRefCount;
 #if defined(__AUI_USE_SDL__)
 	static SDL_mutex *m_cs;
+#elif defined(__AUI_USE_AMIGA__)
+	// Single-threaded: no lock list lock.
 #else
 	static	CRITICAL_SECTION	m_cs;
 #endif

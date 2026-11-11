@@ -182,6 +182,15 @@ public:
 		const MBCHAR *text,
 		uint32 maxlen = 0xffffffff )
 	{
+#if defined(CTP2_AMIGA_BUILD)
+		// The same text again draws nothing new. Panels set their labels on
+		// every frame, and each redraw of a control in a shaped window (the
+		// control panel) redraws the whole window: 150 ms on a 68060.
+		if (text && m_text && maxlen == 0xffffffff && !strcmp(m_text, text))
+		{
+			return AUI_ERRCODE_OK;
+		}
+#endif
 		m_draw |= m_drawMask & k_AUI_REGION_DRAWFLAG_UPDATE;
 		return aui_TextBase::SetText( text, maxlen );
 	}

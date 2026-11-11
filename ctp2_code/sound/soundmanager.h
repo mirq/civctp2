@@ -43,10 +43,7 @@
 #include "pointerlist.h"
 #include "gamesounds.h"
 
-#if defined(USE_SDL)
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_mixer.h>
-#endif
+#include "soundmixer.h"
 
 template <class T> class PointerList;
 
@@ -156,12 +153,12 @@ private:
 	BOOL					m_noSound;
 	BOOL					m_usePlaySound;
 
-#if defined(USE_SDL)
+#if defined(CTP2_USE_MIX_API)
 	sint32					m_useOggTracks;
 	Mix_Music				*m_oggTrack;
-#else // USE_SDL
+#else // CTP2_USE_MIX_API
 	HREDBOOK				m_redbook;
-#endif // USE_SDL
+#endif // CTP2_USE_MIX_API
 	uint32					m_timeToCheckMusic;
 	sint32					m_numTracks;
 	sint32					m_curTrack;

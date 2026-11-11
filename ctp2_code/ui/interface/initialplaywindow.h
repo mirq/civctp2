@@ -106,6 +106,10 @@ sint32 initialplayscreen_displayMyWindow();
 sint32 initialplayscreen_removeMyWindow(uint32 action);
 AUI_ERRCODE initialplayscreen_Initialize( void );
 void initialplayscreen_Cleanup(void);
+#if defined(CTP2_AMIGA_BUILD)
+// F4 on the main menu: a new game at once, with the last settings.
+bool initialplayscreen_QuickStart(void);
+#endif
 
 void
 spritetest_spPress(aui_Control *control, uint32 action, uint32 data, Cookie cookie );

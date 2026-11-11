@@ -381,11 +381,13 @@ void SettleMap::GetSettleTargets(const PLAYER_INDEX &playerId,
 		}
 		else
 		{
+#if !defined(CTP2_AMIGA_BUILD)
 			if(HasCityInSettleDistance(iter->m_pos, min_settle_distance))
 			{
 				iter = targets.erase(iter);
 				continue;
 			}
+#endif
 
 			for(tmp_iter = targets.begin(); tmp_iter != iter; ++tmp_iter)
 			{
@@ -397,6 +399,18 @@ void SettleMap::GetSettleTargets(const PLAYER_INDEX &playerId,
 				}
 			}
 
+#if defined(CTP2_AMIGA_BUILD)
+			// The same tests, the walk round the radius for a city last: it
+			// costs the most, and either test alone drops the target (on a
+			// 68060 it was most of an AI player's turn).
+			if(tmp_iter != iter
+			|| HasCityInSettleDistance(iter->m_pos, min_settle_distance))
+			{
+				iter = targets.erase(iter);
+				continue;
+			}
+			++iter;
+#else
 			if(tmp_iter == iter)
 			{
 				++iter;
@@ -406,6 +420,7 @@ void SettleMap::GetSettleTargets(const PLAYER_INDEX &playerId,
 				iter = targets.erase(iter);
 				continue;
 			}
+#endif
 
 			if(is_land)
 			{

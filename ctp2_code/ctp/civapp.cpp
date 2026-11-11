@@ -272,8 +272,12 @@
 #include "WonderMovieRecord.h"
 #include "workwin.h"
 
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_delay_ms
+#else
 #include <thread>
 #include <chrono>
+#endif
 
 extern ScreenManager *          g_screenManager;
 extern OzoneDatabase            *g_theUVDB;
@@ -554,7 +558,11 @@ namespace Os
 
 	void Sleep(uint32 milliSeconds)
 	{
+#if defined(CTP2_AMIGA_BUILD)
+		amiga_delay_ms(milliSeconds);
+#else
 		std::this_thread::sleep_for(std::chrono::milliseconds(milliSeconds));
+#endif
 	}
 } // namespace Os
 
@@ -1249,6 +1257,13 @@ bool CivApp::InitializeAppDB(void)
 	return true;
 }
 
+#if defined(CTP2_AMIGA_BUILD)
+// The start-up steps before the progress bar and their time (ctp2.log).
+#define AMIGA_STEP(name) amiga_log("Init: %s at %lu ms\n", name, (unsigned long)amiga_ticks_ms())
+#else
+#define AMIGA_STEP(name)
+#endif
+
 sint32 CivApp::InitializeApp(HINSTANCE hInstance, int iCmdShow)
 {
 #if defined(__AUI_USE_DIRECTX__)
@@ -1273,20 +1288,26 @@ sint32 CivApp::InitializeApp(HINSTANCE hInstance, int iCmdShow)
 	// Initializes the civ paths theProfileDB and theLanguageDB
 	// These must be initialzed in this order not to break anything
 	// If you need this initilized earlier, just call this earlier
+	AMIGA_STEP("paths, profile");
 	CivPaths_InitCivPaths();
 
 	g_logCrashes = g_theProfileDB->GetEnableLogs();
 
 	InitDataIncludePath();
-#if !defined(USE_SDL)
+#if !defined(CTP2_PORTABLE_BUILD)
 	c3files_InitializeCD();
 	g_civPaths->InitCDPath();
-#endif // USE_SDL
+#endif // CTP2_PORTABLE_BUILD
+	AMIGA_STEP("great library data");
 	GreatLibrary::Initialize_Great_Library_Data();
 
+	AMIGA_STEP("display");
 	display_Initialize(hInstance, iCmdShow);
+	AMIGA_STEP("keymap");
 	init_keymap();
+	AMIGA_STEP("ui");
 	(void) ui_Initialize();
+	AMIGA_STEP("sound");
 	SoundManager::Initialize();
 
 	if ( sharedsurface_Initialize() != AUI_ERRCODE_OK ) {
@@ -1294,8 +1315,10 @@ sint32 CivApp::InitializeApp(HINSTANCE hInstance, int iCmdShow)
 		return -1;
 	}
 
+	AMIGA_STEP("cursors");
 	CursorManager::Initialize();
 
+	AMIGA_STEP("image maps");
 	InitializeImageMaps();
 
 	ProgressWindow::BeginProgress(
@@ -2333,6 +2356,10 @@ void CivApp::ProcessGraphicsCallback(void)
 	s_inCallback = false;
 }
 
+#if defined(__AUI_USE_AMIGA__)
+extern BOOL gDone;   // civ3_main.cpp: the main loop ends
+#endif
+
 sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_milliseconds)
 {
 	uint32          start_time_ms   = Os::GetTicks();
@@ -2362,6 +2389,17 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 					uint32 used_milliseconds;
 
 					ProcessNet(target_milliseconds, used_milliseconds);
+#if defined(__AUI_USE_AMIGA__)
+					// The mouse moves only with the window's messages (the
+					// SDL build reads it on a thread of its own): without them
+					// the cursor stays at the edge and the map scrolls for ever.
+					if (!g_c3ui->PumpEvents())
+					{
+						gDone = TRUE;
+						break;
+					}
+					g_c3ui->AmigaDrawScreen();
+#endif
 				} while (ui_CheckForScroll());
 
 				g_tiledMap->RetargetTileSurface(NULL);
@@ -2371,11 +2409,27 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 			}
 			else
 			{
+#if defined(__AUI_USE_AMIGA__)
+				// The map layer (units erased and painted again, water, the
+				// tile under the mouse, city names) at 15 frames a second:
+				// each pass walks every tile in view, 12 ms on a 68060 with
+				// one unit on the map. The background window keeps the last
+				// pass meanwhile, so nothing flickers, and what the windows
+				// above uncover is copied from it. The UI keeps its 30.
+				static uint32 s_lastMapFrame = 0;
+				uint32 const  now = Os::GetTicks();
+				if (now - s_lastMapFrame >= 1000 / 15)
+				{
+					s_lastMapFrame = now;
+#endif
 				if(g_tiledMap) {
 					g_tiledMap->RestoreMixFromMap(g_background->TheSurface());
 				}
 				if(g_background)
 					g_background->Draw();
+#if defined(__AUI_USE_AMIGA__)
+				}
+#endif
 
 			}
 

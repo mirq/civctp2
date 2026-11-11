@@ -246,6 +246,41 @@ void TurnYearStatus::Update()
 			Assert(false);
 			break;
 	}
+#if defined(CTP2_AMIGA_BUILD)
+	// This runs on every frame (ControlPanelWindow::Idle), and a redraw of the
+	// bar redraws the whole control panel, a shaped window: about 150 ms on a
+	// 68060. The bar is drawn again only when what it shows changes.
+	{
+		static sint32 s_visible = -1;
+		static sint32 s_current = -1;
+		static double s_done    = -1.0;
+		static double s_busy    = -1.0;
+
+		sint32 visible = -1, current = -1;
+		double done = 0.0, busy = 0.0;
+		if (g_selected_item)
+		{
+			visible = g_selected_item->GetVisiblePlayer();
+			current = g_selected_item->GetCurPlayer();
+			if (visible == current)
+			{
+				done = g_selected_item->UnitsDoneRatio();
+				busy = g_selected_item->UnitsBusyRatio();
+			}
+		}
+
+		if (visible == s_visible && current == s_current && done == s_done && busy == s_busy
+		&&  visible == current)
+		{
+			return;
+		}
+
+		s_visible = visible;
+		s_current = current;
+		s_done    = done;
+		s_busy    = busy;
+	}
+#endif
 	m_dougsProgress->ShouldDraw(TRUE);
 }
 

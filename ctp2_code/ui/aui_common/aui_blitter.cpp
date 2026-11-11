@@ -1931,6 +1931,39 @@ struct aui_Stencil
 	spanIndex rowStart[1];
 };
 
+#if defined(__AUI_USE_AMIGA__)
+// The spans of a row alternate from transparent (StencilMixBlt16 copies the
+// window below there) to solid, starting with a transparent one, which may be
+// empty.
+bool aui_StencilRectIsSolid(const aui_Stencil *stencil, const RECT &rect)
+{
+	if (!stencil) return false;
+
+	for (sint32 row = rect.top; row < rect.bottom; ++row)
+	{
+		sint32 pos         = 0;
+		bool   transparent = true;
+		for
+		(
+			spanIndex index = stencil->rowStart[row];
+			index != kSpanNull && pos < rect.right;
+			index = stencil->spans[index].next
+		)
+		{
+			sint32 const end = pos + stencil->spans[index].length;
+			if (transparent && end > rect.left && pos < rect.right && end > pos)
+			{
+				return false;
+			}
+			pos         = end;
+			transparent = !transparent;
+		}
+	}
+
+	return true;
+}
+#endif
+
 static spanIndex CreateStencilRow(uint16 *src, sint32 width, aui_StencilSpan *spans, int index)
 {
 	uint16 last = 0;
@@ -2414,6 +2447,55 @@ AUI_ERRCODE aui_Blitter::StretchBlt16To16(
 				double(srcRect->bottom - srcRect->top) /
 				double(destRect->bottom - destRect->top);
 
+#if defined(__AUI_USE_AMIGA__)
+			// The double-precision walk below costs a conversion of a pointer
+			// to and from double for every pixel: on a 68060, 50 ms for the
+			// radar map. Rows by 16.16 fixed point instead, and a plain copy
+			// of the rows when nothing is scaled (the radar map, mostly).
+			if ( (flags & k_AUI_BLITTER_FLAG_COPY)
+			||   ((flags & k_AUI_BLITTER_FLAG_CHROMAKEY) && !(flags & k_AUI_BLITTER_FLAG_BLEND)) )
+			{
+				sint32 const srcWidth   = srcRect->right - srcRect->left;
+				sint32 const srcHeight  = srcRect->bottom - srcRect->top;
+				sint32 const destHeight = destRect->bottom - destRect->top;
+				uint32 const stepX = (uint32(srcWidth)  << 16) / uint32(destScanWidth);
+				uint32 const stepY = (uint32(srcHeight) << 16) / uint32(destHeight);
+				bool   const copy  = (flags & k_AUI_BLITTER_FLAG_COPY) != 0;
+				uint16 const key   = (uint16)srcSurf->GetChromaKey();
+
+				uint32 posY = 0;
+				for (sint32 y = 0; y < destHeight; ++y, posY += stepY)
+				{
+					uint16 const * srcRow  = origSrcBuf + (posY >> 16) * srcPitch;
+					uint16 *       destRow = origDestBuf + y * destPitch;
+
+					if (stepX == 0x10000)
+					{
+						if (copy)
+						{
+							memcpy(destRow, srcRow, size_t(destScanWidth) * 2);
+						}
+						else
+						{
+							for (sint32 x = 0; x < destScanWidth; ++x)
+							{
+								if (srcRow[x] != key) destRow[x] = srcRow[x];
+							}
+						}
+						continue;
+					}
+
+					uint32 posX = 0;
+					for (sint32 x = 0; x < destScanWidth; ++x, posX += stepX)
+					{
+						uint16 const pixel = srcRow[posX >> 16];
+						if (copy || pixel != key) destRow[x] = pixel;
+					}
+				}
+			}
+			else
+#endif
+			{
 			double srcPtr = (double)(size_t)srcBuf;
 			double srcLine = 0.0;
 
@@ -2476,6 +2558,7 @@ AUI_ERRCODE aui_Blitter::StretchBlt16To16(
 			else
 			{
 				retcode = AUI_ERRCODE_INVALIDPARAM;
+			}
 			}
 
 			if ( !wasSrcLocked )

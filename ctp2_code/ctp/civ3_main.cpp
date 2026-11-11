@@ -184,6 +184,9 @@
 #include "aui_sdlkeyboard.h"
 #endif
 #endif
+#if defined(__AUI_USE_AMIGA__)
+#include "amiga_platform.h"
+#endif
 
 #if defined(_DEBUG)
 #include "debug.h"          // Os::SetThreadName
@@ -687,6 +690,17 @@ bool ui_CheckForScroll(void)
 			return true;
 		}
 	}
+#if defined(__AUI_USE_AMIGA__)
+	// No scrolling from the edge while the mouse is on the control panel: its
+	// END TURN button and ring reach the screen's right and bottom edges, and
+	// a scroll step on a 68060 is slow enough that aiming at them kept the
+	// map moving instead.
+	else if (g_controlPanel && g_controlPanel->GetWindow()
+	     &&  !g_controlPanel->GetWindow()->IsHidden()
+	     &&  g_controlPanel->GetWindow()->IsInside(x, y))
+	{
+	}
+#endif
 	else
 	{
 		if (x<4)
@@ -1490,6 +1504,14 @@ void main_InitializeLogs(void)
 
 int main(int argc, char **argv)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// Libraries, PROGDIR: as the current directory, the log.
+	if (!amiga_platform_init())
+	{
+		return 20;
+	}
+	atexit(amiga_platform_exit);
+#endif
 	atexit(AtExitProc);
 	int const   r = CivMain(argc, argv);
 
@@ -1843,6 +1865,48 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 				}
 			}
 
+#elif defined(__AUI_USE_AMIGA__)
+
+		// The window's messages: mouse, keys, CTRL-C. One check of the
+		// window's signal when there is nothing (amiga_input_poll).
+		if (!g_c3ui->PumpEvents())
+		{
+			gDone = TRUE;
+		}
+
+		// The sound ring, ahead of the player.
+		amiga_audio_update();
+
+		// What changed goes to the card, the cursor included.
+		g_c3ui->AmigaDrawScreen();
+
+		if (!g_letUIProcess && !gDone)
+		{
+			// The rest of the frame: wait for a button, the wheel, a key or the
+			// frame's end, whichever is first. 30 frames a second, as the SDL
+			// loop. A mouse move only moves the cursor, at once: waiting for
+			// a whole frame of the game first made the cursor lag.
+			static const uint32 TICKS_PER_FRAME = 1000 / 30;
+			for (;;)
+			{
+				uint32 const elapsed = GetTickCount() - frameStartTick;
+				if (elapsed >= TICKS_PER_FRAME) break;
+
+				amiga_input_wait(TICKS_PER_FRAME - elapsed);
+
+				bool pressed = false;
+				if (!g_c3ui->PumpEvents(&pressed))
+				{
+					gDone = TRUE;
+					break;
+				}
+				g_c3ui->AmigaDrawScreen();
+				if (pressed) break;
+			}
+
+		}
+
+		{
 #elif defined(__AUI_USE_DIRECTX__)
 
 		while(PeekMessage(&msg, gHwnd, 0, 0, PM_REMOVE) && !g_letUIProcess)
@@ -1865,7 +1929,7 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 		g_letUIProcess = FALSE;
 	}
 
-#if defined(__AUI_USE_SDL__)
+#if defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__)
 	return 0;
 #else
 	return msg.wParam;
@@ -2190,6 +2254,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	}
 	return DefWindowProc(hwnd, iMsg, wParam, lParam);
 }
+#elif defined(__AUI_USE_AMIGA__)
+// The Amiga events are taken in the main loop (aui_AmigaUI::PumpEvents).
 #else
 #error "No code for something else than DirectX or SDL"
 #endif

@@ -68,11 +68,11 @@ typedef std::pair<double, Agent_ptr> Sorted_Agent_ptr;
 template<class _T1, class _T2>
 bool operator <
 (
-    const Sorted_Goal_ptr& _X,
-    const Sorted_Goal_ptr& _Y
+    const Sorted_Goal_ptr& lhs,
+    const Sorted_Goal_ptr& rhs
 )
 {
-	return (_X.first < _Y.first);
+	return (lhs.first < rhs.first);
 };
 
 typedef std::list<Agent_ptr> Agent_List;

@@ -569,7 +569,7 @@ aui_Control *aui_Control::SetKeyboardFocus( void )
 	return prevFocus;
 }
 
-#if defined(__AUI_USE_SDL__)
+#if (defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__))
 extern class aui_Win* g_winFocus;
 #endif
 
@@ -583,7 +583,7 @@ AUI_ERRCODE aui_Control::ReleaseKeyboardFocus(void)
 
 	if (g_ui)
 	{
-#if !defined(__AUI_USE_SDL__)
+#if !defined(__AUI_USE_SDL__) && !defined(__AUI_USE_AMIGA__)
 		SetFocus(g_ui->TheHWND());
 #else
 		g_winFocus = 0;
