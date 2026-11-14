@@ -30,9 +30,12 @@ permissions:
   contents: read
 
 env:
-  # The toolchain images; replace them to build with other compiler versions.
-  IMAGE_68K: amigadev/crosstools:m68k-amigaos     # Bebbo gcc 6.5.0b + libnix
-  IMAGE_WOS: amigadev/crosstools:ppc-amigaos      # adtools ppc-amigaos-gcc 11.5
+  # The toolchain images, pinned by digest: the tags move, and a newer
+  # m68k-amigaos image builds differently. Replace them to change compilers.
+  # m68k-amigaos of 2025-12-29: Bebbo gcc 6.5.0b 251015095727 + libnix
+  IMAGE_68K: amigadev/crosstools@sha256:dbdd5424824bf90361e14590263d685e37537f2cb3268d4c378b60f721befd84
+  # ppc-amigaos: adtools ppc-amigaos-gcc 11.5
+  IMAGE_WOS: amigadev/crosstools@sha256:de69c1ddd5ea77c7202f50304919b45b94d45060a11f70eaf3767175cd73f8b3
   MOS_SDK_URL: https://bigfoot.morphos-team.net/test/morphos-sdk_20230510-1_amd64.deb
   MOS_SDK_SHA256: 2e5e687a0ba1cb62a554110d97ccd4f1986ae2262e1212acfb02eda7fab2093a
   MOS2WOS_URL: https://aminet.net/dev/gcc/gcc-mos2wos.lha
