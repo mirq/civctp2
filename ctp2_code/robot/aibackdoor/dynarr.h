@@ -38,6 +38,7 @@
 #define DYNAMIC_ARRAY_H__
 
 #include <algorithm>
+#include <limits>           // std::numeric_limits
 
 template <class T> class DynamicArray;
 #define k_FUDGE_MAX_ARMY_SIZE 9
