@@ -38,8 +38,17 @@ typedef int8_t               sint8;
 typedef uint8_t              uint8;
 typedef int16_t              sint16;
 typedef uint16_t             uint16;
+#if defined(CTP2_AMIGA_BUILD)
+// Some Amiga compilers make int32_t a long (m68k-amigaos-gcc 16), which
+// the game's overloads on int and unsigned (Army(sint32), Unit(uint32),
+// std::min of a sint32 and a literal) cannot tell from an int: plain int
+// here, 32 bits on every Amiga target.
+typedef int                  sint32;
+typedef unsigned int         uint32;
+#else
 typedef int32_t              sint32;
 typedef uint32_t             uint32;
+#endif
 typedef int64_t              sint64;
 typedef uint64_t             uint64;
 

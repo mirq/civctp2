@@ -76,8 +76,14 @@ typedef int8_t               sint8;
 typedef uint8_t              uint8;
 typedef int16_t              sint16;
 typedef uint16_t             uint16;
+#if defined(CTP2_AMIGA_BUILD)
+/* As os/include/ctp2_inttypes.h: int32_t is a long with some Amiga compilers. */
+typedef int                  sint32;
+typedef unsigned int         uint32;
+#else
 typedef int32_t              sint32;
 typedef uint32_t             uint32;
+#endif
 typedef int64_t              sint64;
 typedef uint64_t             uint64;
 
