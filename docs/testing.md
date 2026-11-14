@@ -60,13 +60,15 @@ DISPLAY=:7 import -window root shot.png      # screenshot
 `RAM:ctp2card.ppm` (the card, read back) and `RAM:ctp2shadow.ppm` (the diff's
 shadow). Copy them to the host and compare:
 
-- card ≠ shadow: writes to the card were lost (the reason the scrub exists);
+- card ≠ shadow: the card does not show what the diff believes (a write that did not land, or a wrong starting state, as with the grey screen);
 - shadow ≠ frame: a present or scroll missed a rectangle;
 - all equal: the display is correct.
 
 Check at the menu, on the idle map, mid-scroll and after scrolling in
 **each** direction, on an explored area: black unexplored maps hide errors.
-See [graphics-pipeline.md](graphics-pipeline.md), section 10.
+With `ENV:CTP2_TEST` set, F9 explores the whole map. Look at the pictures
+too: when the frame itself is drawn wrong, the three dumps still agree.
+See [graphics-pipeline.md](graphics-pipeline.md), section 11.
 
 ## AI regression
 

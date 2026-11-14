@@ -34,6 +34,9 @@
 
 #include "c3.h"
 #include "tileset.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_log: load step times
+#endif
 
 #include "World.h"
 
@@ -462,6 +465,10 @@ void TileSet::LoadMapIcons(void)
 	Pixel16		*tga;
 	Pixel16		*data;
 
+#if defined(CTP2_AMIGA_BUILD)
+	uint64_t findUs = 0, tgaUs = 0, rimUs = 0;
+	uint32   tgaCount = 0, rimCount = 0;
+#endif
 	m_mapIcons          = new Pixel16*[g_theMapIconDB->NumRecords()];
 	m_mapIconDimensions = new POINT[g_theMapIconDB->NumRecords()];
 	for (sint32 i = 0; i < g_theMapIconDB->NumRecords(); ++i)
@@ -469,7 +476,16 @@ void TileSet::LoadMapIcons(void)
 
 		sprintf(name, "%s", g_theMapIconDB->Get(i)->GetValue());
 
+#if defined(CTP2_AMIGA_BUILD)
+		uint64_t const t0 = amiga_ticks_us();
+		bool const found = g_civPaths->FindFile(C3DIR_PICTURES, name, path, TRUE, FALSE) != NULL;
+		uint64_t const t1 = amiga_ticks_us();
+		findUs += t1 - t0;
+		if (!found) {
+			++rimCount;
+#else
 		if (g_civPaths->FindFile(C3DIR_PICTURES, name, path, TRUE, FALSE) == NULL) {
+#endif
 
 			sprintf(path, "%s", name);
 			char * lastDot = strrchr(path, '.');
@@ -503,9 +519,15 @@ void TileSet::LoadMapIcons(void)
 
 				tileutils_ConvertPixelFormatFrom555(data);
 			}
+#if defined(CTP2_AMIGA_BUILD)
+			rimUs += amiga_ticks_us() - t1;
+#endif
 			continue;
 		}
 
+#if defined(CTP2_AMIGA_BUILD)
+		++tgaCount;
+#endif
 		tga = tileutils_TGA2mem(path, &width, &height);
 		if (tga) {
 			data = (Pixel16 *)tileutils_EncodeTile16(tga, width, height, &len);
@@ -521,8 +543,16 @@ void TileSet::LoadMapIcons(void)
 				m_mapIconDimensions[i] = pt;
 			}
 		}
+#if defined(CTP2_AMIGA_BUILD)
+		tgaUs += amiga_ticks_us() - t1;
+#endif
 
 	}
+#if defined(CTP2_AMIGA_BUILD)
+	amiga_log("Map icons: finding %lu ms, %lu TGA files %lu ms, %lu from the archive %lu ms\n",
+	          (unsigned long)(findUs / 1000), (unsigned long)tgaCount, (unsigned long)(tgaUs / 1000),
+	          (unsigned long)rimCount, (unsigned long)(rimUs / 1000));
+#endif
 }
 
 /*
@@ -781,15 +811,25 @@ void TileSet::QuickLoad(void)
     {
 	    uint8 * dataPtr = reinterpret_cast<uint8 *>(m_tileSetData);
 
+#if defined(CTP2_AMIGA_BUILD)
+#define AMIGA_TILESET_STEP(name) amiga_log("Tile set: %s at %lu ms\n", name, (unsigned long)amiga_ticks_ms())
+#else
+#define AMIGA_TILESET_STEP(name)
+#endif
+	    AMIGA_TILESET_STEP("read, transforms");
 	    QuickLoadTransforms(&dataPtr);
 	    QuickLoadTransitions(&dataPtr);
+	    AMIGA_TILESET_STEP("base tiles");
 	    QuickLoadBaseTiles(&dataPtr);
+	    AMIGA_TILESET_STEP("rivers, improvements, mega tiles");
 	    QuickLoadRiverTransforms(&dataPtr);
 	    QuickLoadImprovements(&dataPtr);
 	    QuickLoadMegaTiles(&dataPtr);
     }
 
+	AMIGA_TILESET_STEP("map icons");
 	LoadMapIcons();
+	AMIGA_TILESET_STEP("done");
 	m_quick = TRUE;
 
 	return;

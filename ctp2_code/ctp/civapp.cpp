@@ -274,6 +274,11 @@
 
 #if defined(CTP2_AMIGA_BUILD)
 #include "amiga_platform.h"     // amiga_delay_ms
+void amiga_ui_busy_tick(void);
+void amiga_uipreload_start(void);   // ui/interface/amiga_uipreload.cpp
+void amiga_uipreload_idle(void);  // ui/aui_amiga/aui_amigaui.cpp
+extern bool   g_amigaMixStale;      // gfx/tilesys/tiledmap.cpp
+extern uint32 g_amigaLastScrollMs;
 #else
 #include <thread>
 #include <chrono>
@@ -1833,6 +1838,9 @@ sint32 CivApp::InitializeGame(CivArchive *archive)
 	g_theProgressWindow->StartCountingTo( 690 );
 
 	m_gameLoaded = TRUE;
+#if defined(__AUI_USE_AMIGA__)
+	amiga_uipreload_start();   // ENV:CTP2_UIPRELOAD=start
+#endif
 	g_gevManager->Resume();
 	g_gevManager->Process();
 
@@ -2131,6 +2139,9 @@ sint32 CivApp::InitializeSpriteEditor(CivArchive *archive)
 	g_theProgressWindow->StartCountingTo( 780 );
 
 	m_gameLoaded = TRUE;
+#if defined(__AUI_USE_AMIGA__)
+	amiga_uipreload_start();   // ENV:CTP2_UIPRELOAD=start
+#endif
 
 	g_director->CatchUp();
 
@@ -2380,15 +2391,29 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 		if (m_gameLoaded && !g_modalWindow) {
 			if (!netGameLoading && ui_CheckForScroll()) {
 				do {
+#if defined(__AUI_USE_AMIGA__)
+					AMIGA_PERF_BEGIN(perfLoop);
+#endif
 
 					g_tiledMap->CopyMixDirtyRects(g_background->GetDirtyList());
+#if defined(__AUI_USE_AMIGA__)
+					amiga_ui_busy_tick();
+					AMIGA_PERF_BEGIN(perfLoopUi);
+#endif
 
 					g_c3ui->Process();
+#if defined(__AUI_USE_AMIGA__)
+					AMIGA_PERF_END(perfLoopUi, AMIGA_PERF_SCROLL_UI);
+					AMIGA_PERF_BEGIN(perfLoopNet);
+#endif
 
 					uint32 target_milliseconds=30;
 					uint32 used_milliseconds;
 
 					ProcessNet(target_milliseconds, used_milliseconds);
+#if defined(__AUI_USE_AMIGA__)
+					AMIGA_PERF_END(perfLoopNet, AMIGA_PERF_SCROLL_NET);
+#endif
 #if defined(__AUI_USE_AMIGA__)
 					// The mouse moves only with the window's messages (the
 					// SDL build reads it on a thread of its own): without them
@@ -2399,6 +2424,7 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 						break;
 					}
 					g_c3ui->AmigaDrawScreen();
+					AMIGA_PERF_END(perfLoop, AMIGA_PERF_SCROLL_LOOP);
 #endif
 				} while (ui_CheckForScroll());
 
@@ -2406,6 +2432,9 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 				g_tiledMap->Refresh();
 				g_tiledMap->InvalidateMap();
 				g_tiledMap->ValidateMix();
+#if defined(__AUI_USE_AMIGA__)
+				g_amigaMixStale = false;    // all of it again, just now
+#endif
 			}
 			else
 			{
@@ -2422,13 +2451,38 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 				{
 					s_lastMapFrame = now;
 #endif
+#if defined(__AUI_USE_AMIGA__)
+				// A scroll (the keys) mixed only the open band of the map:
+				// the rest, under the control panel, once it has stopped.
+				if (g_amigaMixStale && g_tiledMap
+				 && Os::GetTicks() - g_amigaLastScrollMs >= 150)
+				{
+					g_amigaMixStale = false;
+					g_tiledMap->InvalidateMix();
+				}
+				AMIGA_PERF_BEGIN(perfMap);
+#endif
 				if(g_tiledMap) {
+#if defined(__AUI_USE_AMIGA__)
+					AMIGA_PERF_BEGIN(perfRestore);
+#endif
 					g_tiledMap->RestoreMixFromMap(g_background->TheSurface());
+#if defined(__AUI_USE_AMIGA__)
+					AMIGA_PERF_END(perfRestore, AMIGA_PERF_MAP_RESTORE);
+#endif
 				}
 				if(g_background)
 					g_background->Draw();
 #if defined(__AUI_USE_AMIGA__)
+				AMIGA_PERF_END(perfMap, AMIGA_PERF_MAP);
 				}
+				// The cursor moves between the frame's phases too, not
+				// only once a frame (the frame shown stays the last whole one).
+				amiga_ui_busy_tick();
+
+				// ENV:CTP2_UIPRELOAD=idle: a window built while the player
+				// waits (one at most a frame).
+				amiga_uipreload_idle();
 #endif
 
 			}
@@ -2437,15 +2491,26 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 		}
 	}
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfUi);
+#endif
 	if (m_appLoaded) {
 		g_c3ui->Process();
 	}
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfUi, AMIGA_PERF_UI);
+	AMIGA_PERF_BEGIN(perfDirector);
+#endif
 
 	if (m_gameLoaded && !g_modalWindow && g_tiledMap) {
 
 		if (g_director)
 			g_director->Process();
 	}
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfDirector, AMIGA_PERF_DIRECTOR);
+	amiga_ui_busy_tick();
+#endif
 
 	return 0;
 }
@@ -2596,13 +2661,27 @@ sint32 CivApp::Process(void)
 
 	ProcessSLIC();
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfRobot);
+#endif
 	ProcessRobot(target_milliseconds, used_milliseconds);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfRobot, AMIGA_PERF_ROBOT);
+	AMIGA_PERF_BEGIN(perfSound);
+#endif
 
 	if (g_soundManager)
 		g_soundManager->Process(target_milliseconds, used_milliseconds);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfSound, AMIGA_PERF_SOUND);
+	AMIGA_PERF_BEGIN(perfEvents);
+#endif
 
 	if(g_gevManager)
 		g_gevManager->Process();
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfEvents, AMIGA_PERF_EVENTS);
+#endif
 
 	if (m_gameLoaded && g_savedGameRequest && g_selected_item)
 	{

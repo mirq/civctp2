@@ -39,6 +39,11 @@
 #include "c3.h"
 
 #include "civsound.h"
+
+#if defined(CTP2_AMIGA_BUILD)
+#include <map>
+#include <string>
+#endif
 #include "SoundRecord.h"
 #include "prjfile.h"
 
@@ -83,6 +88,39 @@ CivSound::CivSound(const uint32 &associatedObject, const sint32 &soundID)
 	if (strcmp(fname, "NULL.WAV") == 0) {
 		return;
 	}
+
+#if defined(CTP2_AMIGA_BUILD) && defined(CTP2_USE_MIX_API)
+	// Each effect is read from the archive and resampled once; every play
+	// after that gets a chunk of its own (for its own volume) over the same
+	// samples. (A click read and converted sound.zfs data every time.)
+	{
+		static std::map<std::string, Mix_Chunk *> s_samples;
+		std::map<std::string, Mix_Chunk *>::const_iterator found = s_samples.find(fname);
+		Mix_Chunk * samples = NULL;
+		if (found != s_samples.end())
+		{
+			samples = found->second;
+		}
+		else
+		{
+			size_t l_size = 0;
+			void * data   = g_SoundPF->getData(fname, l_size);
+			if (data)
+			{
+				samples = Mix_LoadWAV_RW(SDL_RWFromMem(data, static_cast<int>(l_size)), 1);
+				g_SoundPF->freeData(data);
+			}
+			s_samples[fname] = samples;   // NULL too: not tried again
+		}
+		if (!samples || !samples->alen) {
+			return;
+		}
+		strcpy(m_soundFilename, fname);
+		m_datasize = samples->alen;
+		m_Audio    = Mix_QuickLoad_RAW(samples->abuf, samples->alen);
+		return;
+	}
+#endif
 
     size_t      l_dataSize = 0;
     m_dataptr   = g_SoundPF->getData(fname, l_dataSize);

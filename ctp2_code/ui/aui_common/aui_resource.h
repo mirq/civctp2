@@ -62,6 +62,16 @@ template <class T> struct	aui_ResourceElement;
 #include "CivPaths.h"		// g_civPaths
 #include "tech_wllist.h"	// ListPos, tech_WLList
 
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"	// amiga_avail_fast, ENV:CTP2_PERF timers
+
+// The Amiga keeps what it has loaded once (images, patterns, icons, cursors,
+// fonts) when nothing uses it any more: on a 68060 a window opened again read
+// every one of its pictures from disk and measured its fonts anew (~1-3 s).
+// They are let go only when fast memory runs short.
+#define AUI_RESOURCE_KEEP_FREE (24UL * 1024UL * 1024UL)
+#endif
+
 //----------------------------------------------------------------------------
 // Class declarations
 //----------------------------------------------------------------------------
@@ -98,6 +108,11 @@ public:
 	AUI_ERRCODE	RemoveSearchPath( const MBCHAR *path );
 
 	BOOL FindFile( MBCHAR *fullPath, const MBCHAR *name );
+
+#if defined(CTP2_AMIGA_BUILD)
+	// Lets go of the resources nothing uses when fast memory runs short.
+	void TrimUnused(void);
+#endif
 
 protected:
 	tech_WLList<aui_ResourceElement<T> *>	*m_resourceList;
@@ -264,12 +279,20 @@ T *aui_Resource<T>::Load( const MBCHAR *resName, C3DIR dir, uint32 size)
 		   )
 		{
 			re->refcount++;
+#if defined(CTP2_AMIGA_BUILD)
+			if (amiga_perf) ++amiga_perf_us[AMIGA_PERF_RES_HITS];
+#endif
 			return re->resource;
 		}
 	}
 
 	if (size)
 		name = resName;
+
+#if defined(CTP2_AMIGA_BUILD)
+	if (amiga_perf) ++amiga_perf_us[AMIGA_PERF_RES_MISSES];
+	AMIGA_PERF_BEGIN(perfFind);
+#endif
 
 	static MBCHAR fullPath[ MAX_PATH + 1 ];
 	strncpy( fullPath, name, MAX_PATH );
@@ -299,7 +322,14 @@ T *aui_Resource<T>::Load( const MBCHAR *resName, C3DIR dir, uint32 size)
 		FindFile( fullPath, name );
 	}
 
+#if defined(CTP2_AMIGA_BUILD)
+	AMIGA_PERF_END(perfFind, AMIGA_PERF_RES_FIND);
+	AMIGA_PERF_BEGIN(perfLoad);
+#endif
 	aui_ResourceElement<T> *re = new aui_ResourceElement<T>( name, fullPath );
+#if defined(CTP2_AMIGA_BUILD)
+	AMIGA_PERF_END(perfLoad, AMIGA_PERF_RES_LOAD);
+#endif
 	Assert( re != NULL );
 	if ( re )
 	{
@@ -355,8 +385,12 @@ AUI_ERRCODE aui_Resource<T>::Unload( T *resource )
 		{
 			if (!--re->refcount)
 			{
+#if defined(CTP2_AMIGA_BUILD)
+				TrimUnused();   // kept while memory lasts
+#else
 				m_resourceList->DeleteAt(prevPosition);
 				delete re;
+#endif
 			}
 			return AUI_ERRCODE_OK;
 		}
@@ -384,8 +418,12 @@ AUI_ERRCODE aui_Resource<T>::Unload( const MBCHAR *name )
 		{
 			if (!--re->refcount)
 			{
+#if defined(CTP2_AMIGA_BUILD)
+				TrimUnused();   // kept while memory lasts
+#else
 				m_resourceList->DeleteAt(prevPosition);
 			    delete re;
+#endif
 			}
 			return AUI_ERRCODE_OK;
 		}
@@ -393,5 +431,25 @@ AUI_ERRCODE aui_Resource<T>::Unload( const MBCHAR *name )
 
 	return AUI_ERRCODE_OK;
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+template<class T>
+void aui_Resource<T>::TrimUnused(void)
+{
+	if (amiga_avail_fast() >= AUI_RESOURCE_KEEP_FREE) return;
+
+	ListPos position = m_resourceList->GetHeadPosition();
+	for ( size_t i = m_resourceList->L(); i; i-- )
+	{
+		ListPos prevPosition = position;
+		aui_ResourceElement<T> *re = m_resourceList->GetNext( position );
+		if (re->refcount <= 0)
+		{
+			m_resourceList->DeleteAt(prevPosition);
+			delete re;
+		}
+	}
+}
+#endif
 
 #endif

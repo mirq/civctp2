@@ -46,6 +46,13 @@ static void push(const AmigaEvent *ev)
 	++s_count;
 }
 
+static uint32_t s_lastInputMs;   /* when the window's last message came */
+
+uint32_t amiga_input_idle_ms(void)
+{
+	return amiga_ticks_ms() - s_lastInputMs;
+}
+
 static int port_has_messages(struct MsgPort *port)
 {
 	/* exec's IsMsgPortEmpty(), which is a macro over this. On WarpOS the 68k
@@ -90,6 +97,7 @@ static void drain(void)
 		AmigaEvent ev;
 		memset(&ev, 0, sizeof(ev));
 		ev.time_ms   = amiga_ticks_ms();
+		s_lastInputMs = ev.time_ms;
 		ev.qualifier = msg->Qualifier & 0xFF;
 
 		switch (msg->Class)
@@ -108,6 +116,14 @@ static void drain(void)
 					ev.code = (code == 0x7A) ? 1 : -1;
 					push(&ev);
 				}
+				break;
+			}
+
+			/* Held arrows scroll the map until they are let go (the game
+			 * keeps the key's state): their repeats only queued scroll
+			 * steps that went on after the key was up. */
+			if ((msg->Qualifier & IEQUALIFIER_REPEAT) && code >= 0x4C && code <= 0x4F)
+			{
 				break;
 			}
 

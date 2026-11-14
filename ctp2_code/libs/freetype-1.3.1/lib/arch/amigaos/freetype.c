@@ -8,7 +8,7 @@
 #include "ttcalc.c"
 #include "ttcmap.c"
 #include "ttdebug.c"
-#include "ttfile.c"
+#include "ttmmap.c"   /* arch/amigaos: the font file in memory, not stdio */
 #include "ttgload.c"
 #include "ttinterp.c"
 #include "ttload.c"

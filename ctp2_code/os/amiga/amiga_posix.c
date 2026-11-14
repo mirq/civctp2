@@ -152,15 +152,25 @@ int amiga_fullpath(const char *path, char *out, size_t size)
 		return 1;
 	}
 
-	/* The current directory (the game's drawer) by its full name. */
-	lock = Lock((CONST_STRPTR)"", ACCESS_READ);
-	if (!lock) return 0;
-	if (!NameFromLock(lock, (STRPTR)joined, (LONG)sizeof(joined)))
+	/* The current directory (the game's drawer) by its full name, asked for
+	 * once: only amiga_platform_init/exit change it, and three DOS calls a
+	 * name added up (the asset lookups made ~1.8 s of a game's start). */
 	{
-		UnLock(lock);
-		return 0;
+		static char s_drawer[FIX_SIZE];
+		if (!s_drawer[0])
+		{
+			lock = Lock((CONST_STRPTR)"", ACCESS_READ);
+			if (!lock) return 0;
+			if (!NameFromLock(lock, (STRPTR)s_drawer, (LONG)sizeof(s_drawer)))
+			{
+				s_drawer[0] = 0;
+				UnLock(lock);
+				return 0;
+			}
+			UnLock(lock);
+		}
+		strcpy(joined, s_drawer);
 	}
-	UnLock(lock);
 
 	/* Joined in POSIX form and fixed once, so the ".." parts resolve against
 	 * the drawer's name. Not AddPart: it writes the parent as an empty part

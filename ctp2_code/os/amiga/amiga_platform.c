@@ -8,6 +8,9 @@
 
 #include "amiga_os.h"
 #include "amiga_platform.h"
+#if defined(CTP2_AMIGA_060)
+#include <stabs.h>
+#endif
 
 struct IntuitionBase *IntuitionBase;
 struct GfxBase       *GfxBase;
@@ -92,6 +95,7 @@ int amiga_platform_init(void)
 		s_windowPtrSet = 1;
 	}
 
+	amiga_perf = amiga_env_flag("CTP2_PERF");
 	s_inited = 1;
 
 	amiga_log("Call to Power II for AmigaOS (%s), started\n",
@@ -146,6 +150,86 @@ int amiga_break_requested(void)
 		amiga_log("CTRL-C: quitting\n");
 	}
 	return s_break;
+}
+
+#if defined(CTP2_AMIGA_060)
+/* libnix's exit list, highest priority first: atexit() functions (0), the
+ * C++ static destructors (-5), locale, stdio (-30), malloc (-50), libraries.
+ * The platform closes after the destructors: as an atexit() function it shut
+ * the timer, the screen and the libraries while the game's destructors still
+ * had to run, and the program never ended on a real A4000. */
+/* The game's C++ static destructors are not run: they only give back memory,
+ * which amiga_malloc_exit returns to the system whole, and one of them
+ * (Network::~Network on g_network) never ended on a real A4000, so the
+ * program could not quit. Every entry of the list is replaced with an empty
+ * function before libnix walks it (__exitcpp, priority -5). Files are closed
+ * by libnix's stdio exit, the screen and AHI by amiga_platform_exit.
+ * ENV:CTP2_DTORS runs them instead, each logged first (relative to amiga_log,
+ * for addr2line on ctp2.debug). */
+extern void (*__DTOR_LIST__[])(void);
+
+static void no_destructor(void)
+{
+}
+
+void amiga_exit_destructors_begin(void);
+void amiga_exit_destructors_begin(void)
+{
+	void (**d)(void);
+	int const run = s_inited && amiga_env_flag("CTP2_DTORS");
+
+	if (s_inited) amiga_log(run ? "Exit: C++ destructors\n" : "Exit: C++ destructors skipped\n");
+
+	for (d = &__DTOR_LIST__[1]; *d; ++d)
+	{
+		if (run)
+		{
+			void (*f)(void) = *d;
+			uint32_t const t0 = amiga_ticks_ms();
+			amiga_log("Destructor +%lx\n", (unsigned long)((uintptr_t)f - (uintptr_t)&amiga_log));
+			f();
+			if (amiga_ticks_ms() - t0 >= 50)
+				amiga_log("  took %lu ms\n", (unsigned long)(amiga_ticks_ms() - t0));
+		}
+		*d = no_destructor;
+	}
+}
+
+void amiga_exit_platform_close(void);
+void amiga_exit_platform_close(void)
+{
+	if (s_inited) amiga_platform_exit();
+}
+
+ADD2EXIT(amiga_exit_destructors_begin, -4);
+ADD2EXIT(amiga_exit_platform_close, -20);
+#endif
+
+int      amiga_perf;
+uint32_t amiga_perf_us[AMIGA_PERF_SLOTS];
+
+int amiga_snapshot_requested(void)
+{
+	return (SetSignal(0, SIGBREAKF_CTRL_F) & SIGBREAKF_CTRL_F) != 0;
+}
+
+unsigned long amiga_avail_fast(void)
+{
+	return (unsigned long)AvailMem(MEMF_FAST);
+}
+
+int amiga_env_value(const char *name, char *value, int size)
+{
+	if (size <= 0) return 0;
+	value[0] = '\0';
+	return GetVar((CONST_STRPTR)name, (STRPTR)value, size, GVF_GLOBAL_ONLY) > 0;
+}
+
+int amiga_env_flag(const char *name)
+{
+	char value[16];
+	return GetVar((CONST_STRPTR)name, (STRPTR)value, sizeof(value), GVF_GLOBAL_ONLY) > 0
+	    && value[0] != '0';
 }
 
 /* ---- Language ------------------------------------------------------------- */

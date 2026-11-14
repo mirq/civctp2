@@ -147,6 +147,9 @@
 #include "wonderutil.h"
 #include "World.h"
 #include "Wormhole.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_log: load step times
+#endif
 
 extern void Astar_Init();
 extern void Astar_Cleanup();
@@ -1512,8 +1515,14 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 		                       g_theProfileDB->IsXWrap(),
 		                       g_theProfileDB->IsYWrap());
 
+#if defined(CTP2_AMIGA_BUILD)
+		amiga_log("Game init: creating the world at %lu ms\n", (unsigned long)amiga_ticks_ms());
+#endif
 		g_theWorld->CreateTheWorld(g_player_start_list,
 		                           g_player_start_score);
+#if defined(CTP2_AMIGA_BUILD)
+		amiga_log("Game init: world created at %lu ms\n", (unsigned long)amiga_ticks_ms());
+#endif
 
 #ifdef _DEBUG
 		if (!g_network.IsActive()) {

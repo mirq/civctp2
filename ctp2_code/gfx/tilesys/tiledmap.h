@@ -280,6 +280,10 @@ public:
 	void			SetScrolling(bool scroll){ m_isScrolling=scroll;};
 	void			ScrollPixels(sint32 deltaX, sint32 deltaY, aui_Surface *surf);
 	bool			ScrollMap(sint32 deltaX, sint32 deltaY);
+#if defined(__AUI_USE_AMIGA__)
+	// Whether ScrollMap would move the map at all (not at the map's edge).
+	bool			CanScrollMap(sint32 deltaX, sint32 deltaY) const;
+#endif
 	bool			ScrollMapSmooth(sint32 deltaX, sint32 deltaY);
 	bool			SmoothScrollAligned() const;
 	void			GetSmoothScrollOffsets(sint32 &xoff,sint32 &yoff) const

@@ -67,7 +67,8 @@ AMIGA_PLATFORM_SRCS := \
 	ui/aui_amiga/aui_amigaui.cpp \
 	ui/aui_amiga/aui_amigasurface.cpp \
 	ui/aui_amiga/aui_amigamouse.cpp \
-	ui/aui_amiga/aui_amigakeyboard.cpp
+	ui/aui_amiga/aui_amigakeyboard.cpp \
+	ui/interface/amiga_uipreload.cpp
 
 # ---- Vendored libraries ---------------------------------------------------------
 # FreeType 1.3.1 as one file (its own AmigaOS port), zlib for compressed saves.

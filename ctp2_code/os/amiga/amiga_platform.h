@@ -29,6 +29,50 @@ void amiga_platform_exit(void);
 /* Exits through the game's normal cleanup after CTRL-C or a window close. */
 int  amiga_break_requested(void);
 
+/* CTRL-F (Break n F) since the last call: the UI writes the picture it
+ * composes to RAM:ctp2shot.ppm (the screen is 16-bit RTG, which most
+ * screen grabbers do not read). */
+int  amiga_snapshot_requested(void);
+
+/* ENV:name into value (size bytes); 0 when it is not set. (The C library's
+ * getenv does not read ENV: here.) */
+int  amiga_env_value(const char *name, char *value, int size);
+
+/* Whether ENV:name is set (and not "0"). */
+int  amiga_env_flag(const char *name);
+
+/* ENV:CTP2_PERF: microseconds per phase of the frame, logged and cleared
+ * with the main loop's Perf line (civ3_main.cpp). */
+enum
+{
+	AMIGA_PERF_MAP, AMIGA_PERF_UI, AMIGA_PERF_DIRECTOR, AMIGA_PERF_ROBOT,
+	AMIGA_PERF_SOUND, AMIGA_PERF_EVENTS, AMIGA_PERF_WRITE,
+	AMIGA_PERF_UI_IDLE, AMIGA_PERF_UI_MOUSE, AMIGA_PERF_UI_DRAW,
+	AMIGA_PERF_MAP_MIX, AMIGA_PERF_MAP_WATER, AMIGA_PERF_MAP_SPRITES,
+	AMIGA_PERF_MAP_RESTORE, AMIGA_PERF_MAP_HILITE,
+	AMIGA_PERF_SCROLL_PIXELS, AMIGA_PERF_SCROLL_TILES, AMIGA_PERF_SCROLL_OVERLAYS,
+	AMIGA_PERF_SCROLL_SPRITES, AMIGA_PERF_SCROLL_OTHER,
+	AMIGA_PERF_PANEL_IDLE, AMIGA_PERF_SCROLL_LOOP, AMIGA_PERF_SCROLL_UI, AMIGA_PERF_SCROLL_NET,
+	AMIGA_PERF_SPR_LAYER, AMIGA_PERF_SPR_DIRECTOR, AMIGA_PERF_SPR_OVERLAY, AMIGA_PERF_SPR_NAMES,
+	AMIGA_PERF_FONT_LOAD, AMIGA_PERF_FONT_SIZE, AMIGA_PERF_FONT_LOADS, AMIGA_PERF_FONT_SIZES,
+	AMIGA_PERF_UI_MINIMIZE, AMIGA_PERF_UI_MAXRECTS, AMIGA_PERF_UI_PRE,
+	AMIGA_PERF_BUSY, AMIGA_PERF_SCROLL_COPY, AMIGA_PERF_CARD_SHIFT, AMIGA_PERF_CARD_LOCK,
+	AMIGA_PERF_CARD_DIFF, AMIGA_PERF_SCROLL_STEPS,
+	AMIGA_PERF_RES_HITS, AMIGA_PERF_RES_MISSES, AMIGA_PERF_RES_FIND, AMIGA_PERF_RES_LOAD,
+	AMIGA_PERF_PATH_CALLS, AMIGA_PERF_PATH_MISSES, AMIGA_PERF_PATH_US,
+	AMIGA_PERF_LDL_BUILDS, AMIGA_PERF_LDL_US,
+	AMIGA_PERF_SLOTS
+};
+extern int      amiga_perf;                       /* ENV:CTP2_PERF, read at start */
+extern uint32_t amiga_perf_us[AMIGA_PERF_SLOTS];
+#define AMIGA_PERF_BEGIN(t)      uint64_t const t = amiga_perf ? amiga_ticks_us() : 0
+#define AMIGA_PERF_END(t, slot)  do { if (amiga_perf) amiga_perf_us[slot] += (uint32_t)(amiga_ticks_us() - (t)); } while (0)
+
+/* Free fast memory in bytes (all of it, not the largest block): the UI keeps
+ * the images and fonts it no longer uses while plenty is left
+ * (ui/aui_common/aui_resource.h). */
+unsigned long amiga_avail_fast(void);
+
 /* The n-th preferred language as an ISO 639-1 code ("en", "de", ...), or NULL
  * past the last: ENV:CTP2_LANGUAGE first, then the Locale preferences. */
 const char *amiga_preferred_language(int n);
@@ -92,14 +136,75 @@ int  amiga_video_height(void);
 void amiga_video_present(const uint16_t *pixels, int pitch,
                          const AmigaRect *rects, int count);
 
-/* Copies a width x height patch (pitch in bytes) to the screen at x, y. */
-void amiga_video_present_patch(const uint16_t *pixels, int pitch,
-                               int x, int y, int width, int height);
+/* The same from several frames in one copy (the map from its own surface and
+ * the windows from the composed frame): all are compared first, then the
+ * card's shifts and the writes follow back to back. Each frame's pixels
+ * point at its screen pixel (0, 0). */
+typedef struct AmigaSource
+{
+	const uint16_t *  pixels;
+	int               pitch;
+	const AmigaRect * rects;
+	int               count;
+} AmigaSource;
+void amiga_video_present_multi(const AmigaSource *sources, int count);
+
+/* Whether the copies compare with a shadow of the card (not once the lock
+ * was refused). */
+int amiga_video_has_shadow(void);
+/* What the card shows at x, y, w x h pixels, into out (w pixels a row).
+ * Returns 0 without a shadow or outside the picture. */
+int amiga_video_read_shadow(int x, int y, int w, int h, uint16_t *out);
+
+/* A rectangle of the next full copy that goes out whole, past the compare:
+ * for what is known to have changed everywhere (a scroll's new strip). */
+void amiga_video_force_rect(int left, int top, int right, int bottom);
+
+/* What was touched while shifts wait (amiga_video_touch), where it is and
+ * where the shifts take it, at most max rectangles: the caller puts them
+ * among the rectangles of the full copy that does the shifts. */
+int amiga_video_take_touched(AmigaRect *out, int max);
+
+/* The picture's rectangle x, y, w, h was shifted by dx, dy pixels in the
+ * game's own surface (positive: its content moved left or up). The card's
+ * copy is shifted by its blitter and the shadow with it, so that the next
+ * copy sends only what differs from the shifted picture.
+ * Returns 0 when it will not shift (no shadow: the lock was refused): the
+ * caller then leaves its frame alone and has the whole area sent. */
+int  amiga_video_scroll(int x, int y, int w, int h, int dx, int dy);
+
+/* Rows [top, bottom) of the next copy go out whole, past the diff: the UI
+ * sends a few rows a frame this way, round the screen, so that the card
+ * comes right again wherever a write did not reach it. */
+void amiga_video_force_rows(int top, int bottom);
+
+/* n 16-bit pixels from src to dst (one picture, as memmove), always copied
+ * upwards in memory; shift: how far a row moves right (0: dst - src). */
+void amiga_shift_row(uint16_t *dst, const uint16_t *src, int n, int shift);
+void amiga_copy_up(uint16_t *dst, const uint16_t *src, int n);
+
+/* While a shift waits (amiga_video_scroll): the rectangle's pixels may come
+ * out wrong on the card once it is shifted (the cursor drawn there), so the
+ * next full copy compares it where it is and where the shift takes it. */
+void amiga_video_touch(int left, int top, int right, int bottom);
+int  amiga_video_shift_pending(void);
+
+/* 1 around a copy of the cursor alone, which leaves pending shifts for the
+ * next full copy (the frame it copies from is the one before them). */
+void amiga_video_cursor_only(int on);
+
+/* What the copies cost since the last call (pixels, microseconds, calls), for
+ * the ENV:CTP2_PERF log; the counters start again at zero. */
+void amiga_video_stats(uint32_t *pixels, uint32_t *us, uint32_t *calls);
 
 /* The pointer: the game draws its own cursor, the system one is blanked.
  * (The system pointer is no option: Picasso96's sprite is 16 pixels wide
  * and 3 colours on AmigaOS 3, the game's cursors 48x48 in 16 bits.) */
 void amiga_video_hide_pointer(void);
+
+/* Writes what the card shows of the picture to a PPM (the CTRL-F snapshot's
+ * check that the copies and shifts left nothing stale). Returns 1 if done. */
+int amiga_video_dump_card(const char *path);
 
 /* ---- Input ---------------------------------------------------------------- */
 
@@ -143,6 +248,8 @@ int  amiga_input_poll(AmigaEvent *ev);
 int  amiga_input_peek_mouse(int *x, int *y);
 /* Waits until an event arrives or timeout_ms passes. */
 void amiga_input_wait(uint32_t timeout_ms);
+/* Milliseconds since the window's last message (key, mouse, button). */
+uint32_t amiga_input_idle_ms(void);
 /* Current mouse position (screen pixels). */
 void amiga_input_mouse(int *x, int *y);
 

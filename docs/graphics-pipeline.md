@@ -1,5 +1,14 @@
 # The display graphics pipeline
 
+> **Changed since this was written** (see
+> [scroll-rework-plan.md](scroll-rework-plan.md)): the map's surface has
+> spare room and a scroll moves its origin, not its pixels; every uncovered
+> rectangle of the map is shifted on the card, not one band; where no window
+> covers the map the card gets it straight from the map window's surface, so
+> the composed frame holds only the other windows there; and the busy cursor
+> takes its background from the shadow. Sections 5, 7 and 8 describe the
+> state before those changes.
+
 This document explains how the Amiga builds get the game's picture onto an
 RTG card, and why the code is shaped as it is. Read it before you touch
 `os/amiga/amiga_video.c`, `ui/aui_amiga/aui_amigaui.cpp`, the scroll code in
@@ -7,14 +16,37 @@ RTG card, and why the code is shaped as it is. Read it before you touch
 
 ## 1. The constraint
 
-Everything follows from one measured fact. **On an A4000 the 68060 writes to
-the graphics card at about 2.3 Mpixels/s (0.43 µs per 16-bit pixel, ~5 MB/s
-over Zorro III).** A full 800×600 frame takes about **205 ms** to send.
+The pipeline exists because **memory bandwidth is the limit on a 68060**,
+both to the card and inside fast RAM.
 
-Fast RAM is not fast either: reads run at ~36 MB/s, and `memcpy`/`memset`
-at 16–17 MB/s. Comparing a pixel in fast RAM costs ~0.10–0.17 µs, a few
-times cheaper than writing it to the card, but not free. Copying the whole
-map surface costs ~50 ms.
+| path | rate | a full frame |
+|---|---|---|
+| Zorro III bus to the card (what the bus can do) | ~15 MB/s | 800×600: ~64 ms, 1024×768: ~105 ms |
+| the game's own copy to the card, as measured on the A4000 | ~2.3 Mpixels/s, 0.43 µs/px (~4.6 MB/s) | 800×600: ~205 ms |
+| fast RAM read | ~36 MB/s | |
+| fast RAM `memcpy` / `memset` | 16–17 MB/s | a full-map copy: ~50 ms |
+| shadow compare | 0.10 µs/px | 800×600: ~48 ms |
+
+The two card figures do not agree, and the difference matters:
+
+- The **4.6 MB/s** figure is a measurement of this game's copy loop
+  (`AMIGA_PERF_WRITE`: read the frame from fast RAM, byte-swap for
+  `PIXFMT_RGB16PC`, write through a Radeon behind a Prometheus bridge). It is
+  not the speed of the bus. Earlier versions of these notes, and some code
+  comments, state "~5 MB/s over Zorro III" as if it were the bus limit. That
+  is wrong.
+- At **15 MB/s** a pixel costs about 0.13 µs to write, close to the 0.10 µs
+  it costs to compare. The shadow diff then pays only where less than about a
+  quarter of the compared pixels changed. For large areas that really did
+  change, comparing first costs more than it saves.
+
+**Open item:** measure the raw write rate on the A4000 with a plain longword
+copy into the locked bitmap, without the conversion, and find out why the
+game's loop reaches only a third of the bus rate. The result decides whether
+the diff should be skipped for rectangles known to have changed.
+
+Even at the bus rate, a full frame takes two or three 30 fps frame times,
+and every copy inside fast RAM is as slow as the bus.
 
 So the pipeline is built around three ideas:
 
@@ -25,8 +57,8 @@ So the pipeline is built around three ideas:
    only what is visible, and skip windows whose content is unchanged.
 
 The original game used DirectDraw, and the Linux port uses SDL, which copies
-the whole secondary surface to the screen every frame. Neither approach is
-viable here.
+the whole secondary surface to the screen every frame. A full copy per frame
+is too slow here at either card rate.
 
 ## 2. The overall flow
 
@@ -139,9 +171,10 @@ the screen. Here the record is all that happens until the next present.
 
 - Clips the rectangle to the screen and drops it if an existing rectangle
   already contains it.
-- With more than 64 rectangles, it replaces them all with their union: past
-  that point the per-call cost outweighs the extra pixels, and the diff
-  filters out the unchanged pixels anyway.
+- Drops existing rectangles that the new one contains.
+- With more than 64 rectangles, it merges those that start in the same band
+  of 64 rows into one each. A single union of all of them was often most of
+  the screen (~60 ms to compare).
 - `AddPresentAll` sends the whole screen. It is used for the first frame, on
   Alt-Tab-in, and on a primary `Flip`.
 
@@ -226,20 +259,29 @@ if it held whatever the slack happened to contain, a new picture that
 happened to equal that garbage would never be sent. When a row's offset runs
 out of slack, the row is moved back to the middle once.
 
-### The scrub
+### The scrub, and the grey screen it was built for
 
-Section 1 assumes that every write reaches the card. **On the A4000 that is
-not always true**: a Radeon behind a Prometheus PCI bridge occasionally
-drops writes. The CTRL-F card dump showed grey 16-pixel runs where black was
-written. The shadow believes those pixels are correct, so the diff would
-never fix them.
+On the A4000 the CTRL-F card dump once showed grey 16-pixel runs where the
+frame was black. This was first read as writes lost on the way to the card
+(a Radeon behind a Prometheus PCI bridge). The real cause was the shadow's
+starting state: the shadow began as zeros (black), but the card was **grey**.
+`SetRast(rp, 0)` fills with pen 0, and pen 0 of a new screen is grey, on a
+hi-colour screen too. Every 16-pixel segment that was black in the frame
+matched the shadow and was never sent.
 
-To recover, `AmigaDrawScreen` sends **4 full rows every 80 ms**, cycling
-round the screen (about 12 s per pass), and bypasses the diff for them
-(`amiga_video_force_rows`). After this change the card dumps matched the
-frame exactly: 0 differing pixels at the menu, on the idle map, mid-scroll
-and after a scroll. The scrub never runs in cursor-only presents
-(section 8), because those copy from a frame that may be half drawn.
+`amiga_video_open` now sets colour 0 to black (`SA_Colors`) and
+`clear_card` writes zeros to the whole screen through `LockBitMap`, so the
+card really shows what the shadow says. If the lock is refused, the shadow
+is turned off.
+
+The scrub that was added for the wrong diagnosis is still there as a safety
+net: `AmigaDrawScreen` sends `ENV:CTP2_SCRUB` full rows every 80 ms (default
+4, `0` turns it off), cycling round the screen and bypassing the diff
+(`amiga_video_force_rows`). In Amiberry, with `CTP2_SCRUB=0`, card, shadow
+and frame are identical at the menu, on the map and during scrolls. Repeat
+that check on the real A4000 before changing the default to 0. The scrub
+never runs in cursor-only presents (section 8), because those copy from a
+frame that may be half drawn.
 
 ### Rules that keep the shadow correct
 
@@ -248,8 +290,11 @@ and after a scroll. The scrub never runs in cursor-only presents
   that every pixel is sent, which is slow but correct.
   `amiga_video_present_patch` does exactly this. The fallback path does it
   too.
-- The shadow starts as all zeros, which is correct because the screen was
-  just cleared to black, and black is 0 in every pixel format.
+- The shadow starts as all zeros, and `clear_card` writes zeros to the card
+  (black is 0 in every pixel format). Do not rely on `SetRast` for this.
+- `amiga_video_scroll` returns 0 when it cannot shift (no shadow). The caller
+  must then leave the frame unshifted and have the whole area sent
+  (`tiledmap.cpp` does).
 - A card scroll and the matching shadow scroll must always happen together
   (section 7).
 
@@ -328,7 +373,7 @@ drawn over shifted card content from a frame that does not match it. The
 queued scroll keeps the card, the shadow and the frame consistent. Any rect
 sent while a scroll is pending is recorded with `amiga_video_touch` (up to
 32, then the whole scrolled area), and the next full present compares it
-both where it is and where the scroll moves it.
+where it is and where each pending scroll in turn moves it.
 
 ## 8. The software cursor
 
@@ -401,13 +446,51 @@ Each frame of the main loop runs:
 Idle mouse events go to the UI 10 times a second instead of 60 (rollovers
 and tooltips need them, but each one walks every window's controls, ~6 ms).
 
-## 10. Debugging the pipeline
+## 10. Checked behaviour and known issues
+
+Checked in Amiberry (68060 build, 1024×768, `CTP2_SCRUB=0`) by comparing the
+CTRL-F dumps of frame, card and shadow. The emulator's CPU is close to a
+68060 at 50 MHz, but its RTG card is far faster than a real one and cannot
+lose writes.
+
+| item | result |
+|---|---|
+| screen opens black, shadow matches the card | identical at the menu, on the map, and mid-scroll over explored terrain in all four directions |
+| scroll with the bitmap lock refused | before the fix the card differed from the frame in 287,703 pixels mid-scroll (the whole band); now 0 |
+| more than one scroll pending at a present | never seen (at most one), in several hundred steps |
+| present list over 64 rectangles | never seen while scrolling, founding a city, opening windows or ending a turn |
+
+Known issues, not fixed:
+
+- **Cursor patch during a scroll.** When the cursor is inside the scrolled
+  band and the mouse moves during a scroll step, the busy cursor's patch is
+  taken from the already shifted frame and written onto the not yet shifted
+  card. Measured: of 17,291 pixels written in 7 patches, only 4,493 belonged
+  to the cursor; the rest was map content one step out of place, visible for
+  up to 186 ms until the next full present repaired it. Outside the band (over
+  the control panel) the patches are correct. A fix would be to build the
+  busy cursor's patch from the shadow instead of the frame, which would also
+  remove `amiga_video_touch` and `amiga_video_cursor_only`.
+- **Scrolling against the map edge.** With a scroll key or the pointer held
+  at the edge of the map, the scroll loop keeps running. Each pass composes
+  and compares about 200,000 unchanged pixels (~26 ms) and writes nothing,
+  and the main loop makes no progress meanwhile.
+- **The primary surface is never shown.** `BltSecondaryToPrimary` copies the
+  whole frame into it and then presents the secondary surface, so that copy
+  is wasted. `CursorFollow` and `amiga_video_present_patch` have no callers.
+- **68060 tuning applies to all builds.** The 15 fps map layer, 10 Hz idle
+  mouse events, 32-pixel dirty grid, multi-tile scroll steps and radar rate
+  are guarded only by the general Amiga defines, so the PowerPC builds are
+  throttled the same way.
+- **Shadow size.** 3.4 MB at 800×600 and 4.7 MB at 1024×768, because of the
+  1024-pixel slack on each side of every row.
+
+## 11. Debugging the pipeline
 
 - **CTRL-F** (or `Break <n> F`) writes three PPMs:
   `RAM:ctp2shot.ppm` (the frame as presented, cursor included),
   `RAM:ctp2card.ppm` (read back from the card under `LockBitMap` and
-  converted back to R5G6B5), and `RAM:ctp2shadow.ppm`. If the card differs
-  from the shadow, writes were lost. If the shadow differs from the frame,
+  converted back to R5G6B5), and `RAM:ctp2shadow.ppm`. If the card differs from the shadow, the card does not show what the diff believes. If the shadow differs from the frame,
   the present list or a scroll missed something. Most screen grabbers cannot
   read a 16-bit RTG screen, and `amiga_screenshot` returns grey.
 - **Test maps are mostly black** (unexplored), which hides scroll bugs. Always
@@ -420,7 +503,7 @@ and tooltips need them, but each one walks every window's controls, ~6 ms).
   lines show the first few card scrolls and the band found.
 - See [performance.md](performance.md) for the counters.
 
-## 11. Checklist for changes
+## 12. Checklist for changes
 
 - New drawing code that writes the frame must make sure its rectangles reach
   `AddPresentRect`, through the normal window dirty lists or directly.

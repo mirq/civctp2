@@ -36,6 +36,7 @@
 #include "aui_amiga.h"
 
 class aui_Cursor;
+class aui_Window;
 
 class aui_AmigaUI : public aui_UI, public aui_Amiga
 {
@@ -103,10 +104,32 @@ public:
 	// events): the cursor follows the mouse and animates, nothing else
 	// changes on the screen and no event is handled. At most every 20 ms.
 	void BusyTick(void);
+	void ScrollFrame(sint32 x, sint32 y, sint32 w, sint32 h, sint32 dx, sint32 dy);
+
+	// The map's window (the background): where no other window covers it,
+	// the card gets its pixels straight from its own surface, and they are
+	// not copied into the composed frame first (ENV:CTP2_DIRECTMAP, 0: as
+	// before). NULL when the window goes away.
+	void SetDirectWindow(aui_Window *window);
+	// Before the windows' changes are put together (aui_UI::Draw): which
+	// parts of the map's window are open now.
+	void ComposeBegin(void);
+	// Whether rect (screen) of window goes to the card from the window's own
+	// surface: the composition then only marks it.
+	bool IsDirectRect(aui_Window *window, const RECT &rect) const;
 
 private:
 	void CursorRect(RECT &rect) const;
 	void PresentRect(const RECT &rect);
+	// The cursor's pixels over rect (screen) of a picture whose screen
+	// pixel (0, 0) is at base; what lay there goes to saved (rect's size).
+	void CursorInto(uint16 *base, sint32 pitch, const RECT &rect, uint16 *saved) const;
+	void CursorOutOf(uint16 *base, sint32 pitch, const RECT &rect, const uint16 *saved) const;
+	// The map window's surface as a picture of the screen, and the window's
+	// part of the screen. false: not used now.
+	bool DirectSource(uint16 *&base, sint32 &pitch, RECT &rect) const;
+	// The cursor alone, from what the card shows (BusyTick).
+	void BusyCursor(void);
 
 	std::vector<RECT>   m_present;
 	bool                m_presentAll;
@@ -123,9 +146,21 @@ private:
 	sint32              m_cursorY;
 	RECT                m_cursorShown;   // where the cursor is on the card
 	bool                m_cursorVisible;
+	bool                m_busyTick;      // inside BusyTick: a copy of the cursor alone
 
-	uint16 *            m_composite;     // a cursor-sized patch: frame + cursor
-	size_t              m_compositeSize;
+	uint16 *            m_composite;     // what the cursor covers in the frame
+	uint16 *            m_compositeMap;  // and in the map's surface
+	uint16 *            m_under;         // what the card would show without the cursor
+	uint16 *            m_patchOld;      // BusyCursor: where the cursor was,
+	uint16 *            m_patchNew;      //             where it is,
+	uint16 *            m_underNew;      //             and what it covers there
+	size_t              m_compositeSize; // pixels in each of these
+	bool                m_underValid;    // m_under holds m_cursorShown's pixels
+	bool                m_cursorChanged; // another image since the card got the cursor
+
+	aui_Window *        m_directWindow;
+	bool                m_directOn;
+	std::vector<RECT>   m_open;          // the open parts of the map's window, screen
 };
 
 typedef aui_AmigaUI aui_NativeUI;

@@ -15,6 +15,15 @@ extern C3UI *g_c3ui;
 
 DomesticManagementDialog *g_domesticManagementDialog = NULL;
 
+#if defined(CTP2_AMIGA_BUILD)
+void DomesticManagementDialog::Preload()
+{
+	if(!g_domesticManagementDialog) {
+		g_domesticManagementDialog = new DomesticManagementDialog;
+	}
+}
+#endif
+
 void DomesticManagementDialog::Open()
 {
 	if(g_network.IsClient() && g_network.GetSensitiveUIBlocked())

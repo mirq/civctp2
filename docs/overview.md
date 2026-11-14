@@ -74,6 +74,11 @@ libnix `getenv()` does not read `ENV:`. The code uses `amiga_env_value` /
 | `CTP2_AHI_RATE` | AHI mixing rate, 8000–48000 (default 16000 on the 68060, 22050 on PPC) |
 | `CTP2_LANGUAGE` | ISO 639-1 language code. Without it, the Locale preferences are used |
 | `CTP2_UIPRELOAD` | when the main windows are built: `lazy` (default, on first open), `start` (while a game loads, ~19 s more), `idle` (one at a time while input is idle) |
+| `CTP2_SCRUB` | full rows re-sent to the card every 80 ms, past the diff (default 4, `0` = off) |
+| `CTP2_SCROLLSLACK` | spare pixels across round the map surface, so that a scroll moves no memory (default 1024, rows are half; about 11 MB at 1024×768; `0` = off) |
+| `CTP2_DIRECTMAP` | `0`: the map is copied into the composed frame first, as before (default: the card gets it straight from the map's surface) |
+| `CTP2_STRIPWRITE` | `1`: what a scroll step uncovers goes to the card without the compare (default off; worth it only where writing a pixel costs little more than comparing one) |
+| `CTP2_TEST` | `1`: F9 explores the whole map, for display checks |
 | `CTP2_PERF` | `1`: per-phase frame timings, copy statistics, slow events, the "Big present" callers and the cursor wait, every 3 s in `ctp2.log` |
 | `CTP2_LOGSYNC` | writes `ctp2.log` line by line, for hangs and for load-step timing |
 

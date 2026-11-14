@@ -525,7 +525,11 @@ AUI_ERRCODE CityWindow::Display(const Unit & city)
 	resourceBox->Hide();
 #endif
 
+#if !defined(CTP2_AMIGA_BUILD)
+	// (SetCity above has updated it already: a second pass rebuilt every
+	// list and drew the resource map again, ~0.5 s on a 68060.)
 	s_cityWindow->Update();
+#endif
 
 	return err;
 }

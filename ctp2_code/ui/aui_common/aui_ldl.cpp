@@ -29,6 +29,9 @@
 //----------------------------------------------------------------------------
 
 #include "c3.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"
+#endif
 #include "aui_ldl.h"
 
 #include "aui_ui.h"
@@ -544,6 +547,21 @@ AUI_ERRCODE aui_Ldl::SetupHeirarchyFromLeaf(MBCHAR * leafBlock, aui_Region * obj
 
 aui_Region *aui_Ldl::BuildHierarchyFromRoot(const MBCHAR * rootBlock)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// ENV:CTP2_PERF: windows (and list rows) built from the layouts.
+	struct BuildTimer
+	{
+		uint64_t start;
+		BuildTimer() : start(amiga_perf ? amiga_ticks_us() : 0) {}
+		~BuildTimer()
+		{
+			if (!amiga_perf) return;
+			++amiga_perf_us[AMIGA_PERF_LDL_BUILDS];
+			amiga_perf_us[AMIGA_PERF_LDL_US] += (uint32_t)(amiga_ticks_us() - start);
+		}
+	} buildTimer;
+#endif
+
 	Assert(s_objectListByObject);
 	Assert(s_objectListByString);
 

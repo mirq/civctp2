@@ -1111,6 +1111,53 @@ sint32 TiledMap::DrawBlendedTile(aui_Surface *surface, const MapPoint &pos,sint3
 	uint32  blendRgbMask = pixelutils_GetBlend16RGBMask();
 	Pixel16 transPixel = 0;
 
+#if defined(CTP2_AMIGA_BUILD)
+	// The fog of war is black at one half: every channel halved, which is a
+	// shift and a mask (the same result as pixelutils_Blend16 gives for it),
+	// and the row's address is worked out once, not for every pixel. A map
+	// that is explored but out of sight is drawn through here tile by tile:
+	// on a 68060 the general blend made a scroll step's tiles cost twice
+	// what the tiles in sight do.
+	extern sint32 g_is565Format;
+	if (color == 0 && blend == 16 && g_is565Format)
+	{
+		for (sint32 y = 0; y < k_TILE_PIXEL_HEIGHT; y++)
+		{
+			sint32 const startX = StartPixel(y);
+			sint32 const endX   = k_TILE_PIXEL_WIDTH - startX;
+			Pixel16 *    dest   = (Pixel16 *)(pSurfBase + ((y + ypos) * surfPitch) + ((startX + xpos) << 1));
+
+			for (sint32 x = startX; x < endX; x++)
+			{
+				Pixel16 srcPixel = *dataPtr++;
+				if (transDataPtr)
+					transPixel = *transDataPtr++;
+
+				if (srcPixel < k_NUM_TRANSITIONS)
+				{
+					Pixel16 * &  tI = t[srcPixel];
+
+					if (tI)
+					{
+						srcPixel = *tI++;
+					}
+					else if (transDataPtr)
+					{
+						srcPixel = transPixel;
+					}
+					else
+					{
+						srcPixel = DEFAULT_PIXEL[srcPixel];
+					}
+				}
+				*dest++ = (Pixel16)((srcPixel >> 1) & 0x7BEF);
+			}
+		}
+
+		return 0;
+	}
+#endif
+
 	for (sint32 y = 0; y < k_TILE_PIXEL_HEIGHT; y++)
     {
 		sint32  startX  = StartPixel(y);

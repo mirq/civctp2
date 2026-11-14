@@ -332,10 +332,20 @@ void UnitActor::ChangeImage(SpriteState * spriteState, sint32 type, const Unit &
 
 	DumpAllActions();
 
+#if defined(CTP2_AMIGA_BUILD)
+	// The new sprite is taken before the old one is let go: when they are
+	// the same (a city growing), the group's count no longer drops to zero
+	// on the way, which deleted it and read it from disk again, 4-5 times
+	// for a new city on a 68060.
+	sint32 const          oldSpriteID = m_spriteID;
+	LOADTYPE const        oldLoadType = m_loadType;
+	GROUPTYPE const       oldType     = m_type;
+#else
 	GetSpriteGroupList(m_type)->ReleaseSprite(m_spriteID, m_loadType);
 	if (m_loadType != LOADTYPE_BASIC) {
 		GetSpriteGroupList(m_type)->ReleaseSprite(m_spriteID, LOADTYPE_BASIC);
 	}
+#endif
 	m_unitSpriteGroup = NULL;
 
 	sint32 spriteID;
@@ -359,6 +369,12 @@ void UnitActor::ChangeImage(SpriteState * spriteState, sint32 type, const Unit &
 	m_loadType = LOADTYPE_BASIC;
 	m_unitSpriteGroup = (UnitSpriteGroup *)
 			GetSpriteGroupList(m_type)->GetSprite(spriteID, m_type, m_loadType, (GAME_ACTION)0);
+#if defined(CTP2_AMIGA_BUILD)
+	GetSpriteGroupList(oldType)->ReleaseSprite(oldSpriteID, oldLoadType);
+	if (oldLoadType != LOADTYPE_BASIC) {
+		GetSpriteGroupList(oldType)->ReleaseSprite(oldSpriteID, LOADTYPE_BASIC);
+	}
+#endif
 	if (m_type == GROUPTYPE_CITY) {
 		m_facing = k_DEFAULTSPRITEFACING;
 	}

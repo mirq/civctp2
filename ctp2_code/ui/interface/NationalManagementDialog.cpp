@@ -129,6 +129,15 @@ static const sint32 k_NMD_SPEC_COMBAT_UNITS = 9;
 
 NationalManagementDialog *g_nationalManagementDialog = NULL;
 
+#if defined(CTP2_AMIGA_BUILD)
+void NationalManagementDialog::Preload()
+{
+	if(!g_nationalManagementDialog) {
+		g_nationalManagementDialog = new NationalManagementDialog;
+	}
+}
+#endif
+
 void NationalManagementDialog::Open()
 {
 

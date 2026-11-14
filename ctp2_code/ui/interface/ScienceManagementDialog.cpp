@@ -78,6 +78,15 @@ ScienceManagementDialog *g_scienceManagementDialog = NULL;
 
 #define	k_SCI_COL_ADVANCE 0
 
+#if defined(CTP2_AMIGA_BUILD)
+void ScienceManagementDialog::Preload()
+{
+	if(!g_scienceManagementDialog) {
+		g_scienceManagementDialog = new ScienceManagementDialog;
+	}
+}
+#endif
+
 void ScienceManagementDialog::Open()
 {
 	if(!g_scienceManagementDialog) {

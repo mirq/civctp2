@@ -51,6 +51,11 @@ union Cookie;
 class NationalManagementDialog {
 public:
 	static void Open();
+#if defined(CTP2_AMIGA_BUILD)
+	// Builds the window without showing it (ENV:CTP2_UIPRELOAD,
+	// ui/interface/amiga_uipreload.cpp).
+	static void Preload();
+#endif
 	static void Close();
 	static void Cleanup();
 	static bool IsShown();

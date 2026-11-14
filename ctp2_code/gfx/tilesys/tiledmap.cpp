@@ -67,6 +67,27 @@
 #include "aui_dirtylist.h"
 #include "aui_stringtable.h"
 #include "background.h"
+#if defined(__AUI_USE_AMIGA__)
+#include "amiga_platform.h"     // amiga_video_scroll
+#include "aui_amigasurface.h"   // the background surface's spare room
+void amiga_ui_busy_tick(void);  // ui/aui_amiga/aui_amigaui.cpp
+void amiga_ui_scroll_frame(sint32 x, sint32 y, sint32 w, sint32 h, sint32 dx, sint32 dy);
+
+// The rows of the background window no other window covers, as the last
+// ScrollPixels found them (surface coordinates; bottom <= top: unknown).
+// What a scroll step shifted on the card and in the frame, in the background
+// surface's coordinates: the rectangles of the map no other window covers.
+static std::vector<RECT> s_amigaShifted;
+// A scroll step mixed only that band: the rest (what shows through the
+// control panel) is mixed again once the scrolling stops (civapp.cpp).
+// Set by AmigaScrollMap (civ3_main.cpp) around a step of a scroll loop that
+// keeps to one axis (the loop ends when it turns, and its end paints the
+// whole background surface again from the map surface): ScrollPixels may then
+// leave what no step of the loop shows unshifted.
+bool   g_amigaScrollOneAxis = false;
+bool   g_amigaMixStale     = false;
+uint32 g_amigaLastScrollMs = 0;
+#endif
 #include "BaseTile.h"
 #include "c3errors.h"
 #include "c3_popupwindow.h"
@@ -316,7 +337,15 @@ sint32 TiledMap::Initialize(RECT *viewRect)
 
 	m_localVision->SetAmOnScreen(true);
 
+#if defined(__AUI_USE_AMIGA__)
+	// Finer cells: what a pass restores, composes and copies is the union
+	// of the cells the sprites touch, and on an A4000 every pixel of it
+	// costs (fast RAM ~17 MB/s copying). A selected unit dirtied six 128x128
+	// cells (98 kpixels) for a sprite, a shield and brackets.
+	InitGrid( 32, 32);
+#else
 	InitGrid( 128, 128);
+#endif
 
 	return AUI_ERRCODE_OK;
 }
@@ -674,6 +703,27 @@ void TiledMap::RestoreMixFromMap(aui_Surface *destSurf)
 		m_oldMixDirtyList,
 		k_AUI_BLITTER_FLAG_COPY );
 #else
+#if defined(__AUI_USE_AMIGA__)
+	// ENV:CTP2_PERF: what the map layer restores, every 3 seconds.
+	if (amiga_perf)
+	{
+		static uint32 s_lastLog = 0;
+		uint32 const  now = amiga_ticks_ms();
+		if (now - s_lastLog >= 3000)
+		{
+			s_lastLog = now;
+			char   buf[400] = "";
+			size_t len = 0;
+			ListPos p = m_oldMixDirtyList->GetHeadPosition();
+			for (size_t n = m_oldMixDirtyList->L(); n && len < sizeof(buf) - 40; --n)
+			{
+				RECT * r = m_oldMixDirtyList->GetNext(p);
+				len += sprintf(buf + len, " %ld,%ld-%ld,%ld", (long)r->left, (long)r->top, (long)r->right, (long)r->bottom);
+			}
+			amiga_log("Mix restore: %lu rects:%s\n", (unsigned long)m_oldMixDirtyList->L(), buf);
+		}
+	}
+#endif
 	m_oldMixDirtyList->Minimize();
 
 	ListPos position = m_oldMixDirtyList->GetHeadPosition();
@@ -817,7 +867,13 @@ void TiledMap::InvalidateMix(void)
 
 	m_mixDirtyList->Flush();
 
+#if defined(__AUI_USE_AMIGA__)
+	// One rectangle, not one per grid cell (32 pixels on the Amiga: ~475
+	// rectangles for the whole view, each composed and clipped on its own).
+	m_mixDirtyList->AddRect(&tempRect);
+#else
 	AddDirtyRect(tempRect, m_mixDirtyList);
+#endif
 
 	for (sint32 i=0; i<m_gridHeight; i++) {
 		for (sint32 j=0; j<m_gridWidth; j++) {
@@ -882,6 +938,9 @@ void TiledMap::UpdateMixFromMap(aui_Surface *mixSurf)
 		RECT * rect = m_mapDirtyList->GetNext(position);
 		g_c3ui->TheBlitter()->Blt(mixSurf, rect->left, rect->top, m_surface, rect, k_AUI_BLITTER_FLAG_COPY);
 		m_mixDirtyList->AddRect(rect);
+#if defined(__AUI_USE_AMIGA__)
+		amiga_ui_busy_tick();   // the frame on the card is the last whole one
+#endif
 	}
 
 #endif
@@ -2903,13 +2962,29 @@ sint32 TiledMap::RepaintSprites(aui_Surface *surf, const RECT & paintRect, bool 
 
 	g_screenManager->LockSurface(surf);
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfLayer);
+#endif
 	RepaintLayerSprites(paintRect, 0);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfLayer, AMIGA_PERF_SPR_LAYER);
+	AMIGA_PERF_BEGIN(perfDir);
+#endif
 	g_director->Draw(paintRect, 0);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfDir, AMIGA_PERF_SPR_DIRECTOR);
+#endif
 
 	if (g_spriteEditWindow)
 		g_spriteEditWindow->DrawSprite();
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfOverlay);
+#endif
 	g_tiledMap->DrawTerrainOverlay(surf);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfOverlay, AMIGA_PERF_SPR_OVERLAY);
+#endif
 
 	if (!scrolling)
 	{
@@ -2918,10 +2993,16 @@ sint32 TiledMap::RepaintSprites(aui_Surface *surf, const RECT & paintRect, bool 
 
 	g_screenManager->UnlockSurface();
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfNames);
+#endif
 	if (g_theProfileDB->GetShowCityNameAlpha() != pixelutils_TRANSPARENT)
 	{
 		g_tiledMap->DrawCityNames(surf, 0);
 	}
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfNames, AMIGA_PERF_SPR_NAMES);
+#endif
 
 	if (ScenarioEditor::ShowStartFlags())
 	{
@@ -3222,8 +3303,300 @@ sint32 TiledMap::Refresh(void)
 	return 0;
 }
 
+#if defined(__AUI_USE_AMIGA__)
+// The background surface shifted in fast RAM, only rows [r0, r1) for a step
+// across and only columns [c0, c1) (even) for a step up or down: the rest is
+// not on the screen during the scroll loop and is painted again at its end.
+// All copies go upwards in memory, which the 68060 does in bursts.
+static void AmigaShiftSurface(char *buffer, sint32 pitch, sint32 w, sint32 h,
+                              sint32 deltaX, sint32 deltaY,
+                              sint32 r0, sint32 r1, sint32 c0, sint32 c1)
+{
+	if (deltaX)
+	{
+		sint32 const dx         = abs(deltaX);
+		sint32 const shiftLongs = dx >> 1;
+		sint32 const keepLongs  = (w - dx) >> 1;
+		for (sint32 i = r0; i < r1; i++)
+		{
+			if (((i - r0) & 63) == 63) amiga_ui_busy_tick();
+			uint32 * row = (uint32 *)(buffer + i * pitch);
+			if (deltaX > 0)
+			{
+				uint32 *       d = row;
+				uint32 const * s = row + shiftLongs;
+				for (sint32 j = keepLongs; j > 0; --j) *d++ = *s++;
+				for (sint32 j = shiftLongs; j > 0; --j) *d++ = 0;
+			}
+			else
+			{
+				// In chunks as wide as the shift, from the right to the left,
+				// each upwards: a chunk never overlaps its own source.
+				for (sint32 end = keepLongs; end > 0; end -= shiftLongs)
+				{
+					sint32 const   start = (end > shiftLongs) ? end - shiftLongs : 0;
+					uint32 *       d = row + start + shiftLongs;
+					uint32 const * s = row + start;
+					for (sint32 j = end - start; j > 0; --j) *d++ = *s++;
+				}
+				for (sint32 j = 0; j < shiftLongs; j++) row[j] = 0;
+			}
+		}
+	}
+	else if (deltaY)
+	{
+		sint32 const dy    = abs(deltaY);
+		sint32 const longs = (c1 - c0) >> 1;
+		// Rows: those the screen shows and those a later step of the loop
+		// brings into view (below them going down, above going up; the
+		// repaint fills the far end of the surface).
+		if (deltaY > 0)
+		{
+			for (sint32 i = r0; i < h - dy; i++)
+			{
+				if ((i & 63) == 63) amiga_ui_busy_tick();
+				uint32 *       d = (uint32 *)(buffer + i * pitch + c0 * 2);
+				uint32 const * s = (uint32 const *)(buffer + (i + dy) * pitch + c0 * 2);
+				for (sint32 j = longs; j > 0; --j) *d++ = *s++;
+			}
+			for (sint32 i = h - dy; i < h; i++)
+				memset(buffer + i * pitch + c0 * 2, 0, (size_t)longs * 4);
+		}
+		else
+		{
+			for (sint32 i = r1 - 1; i >= dy; i--)
+			{
+				if ((i & 63) == 63) amiga_ui_busy_tick();
+				uint32 *       d = (uint32 *)(buffer + i * pitch + c0 * 2);
+				uint32 const * s = (uint32 const *)(buffer + (i - dy) * pitch + c0 * 2);
+				for (sint32 j = longs; j > 0; --j) *d++ = *s++;
+			}
+			for (sint32 i = 0; i < dy; i++)
+				memset(buffer + i * pitch + c0 * 2, 0, (size_t)longs * 4);
+		}
+	}
+}
+
+// The rows of the screen some window leaves open somewhere along them
+// (first and last), for the shift above.
+static void AmigaOpenRows(sint32 screenW, sint32 screenH, sint32 &first, sint32 &last)
+{
+	first = screenH;
+	last  = -1;
+	tech_WLList<aui_Region *> * windows = g_c3ui->ChildList();
+	for (sint32 row = 0; row < screenH; ++row)
+	{
+		// The windows' spans on this row, merged from the left edge (a row
+		// open only through a slit of a few pixels counts as covered: the
+		// slit stays stale until the loop's end, as under the control panel).
+		sint32 reach = 0;
+		bool   grew  = true;
+		while (grew && reach < screenW)
+		{
+			grew = false;
+			ListPos position = windows->GetHeadPosition();
+			for (size_t n = windows->L(); n; --n)
+			{
+				aui_Region * window = windows->GetNext(position);
+				if (!window || window == g_background || window->IsHidden()) continue;
+				if (row < window->Y() || row >= window->Y() + window->Height()) continue;
+				// (A gap of a few pixels between two windows counts as
+				// covered: the radar and the control panel leave one.)
+				if (window->X() <= reach + 4 && window->X() + window->Width() > reach)
+				{
+					reach = window->X() + window->Width();
+					grew  = true;
+				}
+			}
+		}
+		if (reach < screenW)
+		{
+			if (row < first) first = row;
+			last = row;
+		}
+	}
+}
+#endif
+
+#if defined(__AUI_USE_AMIGA__)
+// The part of the background window on the screen that no other window
+// covers, as rectangles that do not overlap (screen coordinates): rows are
+// cut at every window's top and bottom, and each band keeps what the windows
+// on it leave open; bands with the same openings are joined.
+// columns: the same across (columns cut at the windows' sides), for a scroll
+// up or down: what a rectangle's shift uncovers then comes from the same
+// rectangle's far end, where cut into rows each row band below another would
+// have its own strip to paint again.
+static void AmigaSwapXY(RECT &r)
+{
+	std::swap(r.left, r.top);
+	std::swap(r.right, r.bottom);
+}
+
+static void AmigaOpenRects(std::vector<RECT> &out, bool columns)
+{
+	out.clear();
+	if (!g_background || !g_c3ui) return;
+
+	RECT view =
+	{
+		std::max<sint32>(g_background->X(), 0),
+		std::max<sint32>(g_background->Y(), 0),
+		std::min<sint32>(g_background->X() + g_background->Width(),  g_c3ui->Width()),
+		std::min<sint32>(g_background->Y() + g_background->Height(), g_c3ui->Height())
+	};
+	if (view.left >= view.right || view.top >= view.bottom) return;
+	RECT const screenView = view;       // as it is on the screen
+	if (columns) AmigaSwapXY(view);
+
+	std::vector<RECT> covers;
+	std::vector<sint32> ys;
+	ys.push_back(view.top);
+	ys.push_back(view.bottom);
+
+	tech_WLList<aui_Region *> * windows = g_c3ui->ChildList();
+	ListPos position = windows->GetHeadPosition();
+	for (size_t n = windows->L(); n; --n)
+	{
+		aui_Region * window = windows->GetNext(position);
+		if (!window || window == g_background || window->IsHidden()) continue;
+
+		RECT c =
+		{
+			std::max<sint32>(window->X(), screenView.left),
+			std::max<sint32>(window->Y(), screenView.top),
+			std::min<sint32>(window->X() + window->Width(),  screenView.right),
+			std::min<sint32>(window->Y() + window->Height(), screenView.bottom)
+		};
+		if (c.left >= c.right || c.top >= c.bottom) continue;
+		if (columns) AmigaSwapXY(c);
+		covers.push_back(c);
+		ys.push_back(c.top);
+		ys.push_back(c.bottom);
+	}
+	std::sort(ys.begin(), ys.end());
+	ys.erase(std::unique(ys.begin(), ys.end()), ys.end());
+
+	size_t prevFirst = 0, prevCount = 0;    // the band above's rectangles in out
+	for (size_t b = 0; b + 1 < ys.size(); ++b)
+	{
+		sint32 const y0 = ys[b], y1 = ys[b + 1];
+
+		// The openings of this band, left to right.
+		std::vector<sint32> edges;          // pairs: left, right
+		edges.push_back(view.left);
+		edges.push_back(view.right);
+		for (size_t c = 0; c < covers.size(); ++c)
+		{
+			RECT const & w = covers[c];
+			if (w.top >= y1 || w.bottom <= y0) continue;
+			std::vector<sint32> next;
+			for (size_t e = 0; e + 1 < edges.size(); e += 2)
+			{
+				sint32 const l = edges[e], r = edges[e + 1];
+				if (w.right <= l || w.left >= r) { next.push_back(l); next.push_back(r); continue; }
+				if (w.left > l)  { next.push_back(l);       next.push_back(w.left); }
+				if (w.right < r) { next.push_back(w.right); next.push_back(r); }
+			}
+			edges.swap(next);
+		}
+
+		bool same = prevCount * 2 == edges.size() && prevCount > 0;
+		for (size_t e = 0; same && e < prevCount; ++e)
+		{
+			RECT const & r = out[prevFirst + e];
+			same = r.left == edges[2 * e] && r.right == edges[2 * e + 1] && r.bottom == y0;
+		}
+		if (same)
+		{
+			for (size_t e = 0; e < prevCount; ++e) out[prevFirst + e].bottom = y1;
+			continue;
+		}
+
+		prevFirst = out.size();
+		prevCount = edges.size() / 2;
+		for (size_t e = 0; e + 1 < edges.size(); e += 2)
+		{
+			RECT r = { edges[e], y0, edges[e + 1], y1 };
+			out.push_back(r);
+		}
+	}
+
+	if (columns)
+	{
+		for (size_t n = 0; n < out.size(); ++n) AmigaSwapXY(out[n]);
+	}
+}
+#endif
+
+#if defined(__AUI_USE_AMIGA__)
+bool TiledMap::CanScrollMap(sint32 deltaX, sint32 deltaY) const
+{
+	if (g_modalWindow) return false;
+
+	if (!g_theWorld->IsXwrap())
+	{
+		if ((deltaX < 0) && (m_mapViewRect.left  + deltaX < GetMinMapLeft()))  deltaX = 0;
+		if ((deltaX > 0) && (m_mapViewRect.right + deltaX > GetMaxMapRight())) deltaX = 0;
+	}
+	if (!g_theWorld->IsYwrap())
+	{
+		if ((deltaY < 0) && (m_mapViewRect.top    + deltaY < GetMinMapTop()))    deltaY = 0;
+		if ((deltaY > 0) && (m_mapViewRect.bottom + deltaY > GetMaxMapBottom())) deltaY = 0;
+	}
+	return deltaX || deltaY;
+}
+
+// For the UI (aui_AmigaUI::ComposeBegin): where the map shows.
+void amiga_map_open_rects(std::vector<RECT> &out)
+{
+	AmigaOpenRects(out, false);
+}
+#endif
+
 void TiledMap::ScrollPixels(sint32 deltaX, sint32 deltaY, aui_Surface *surf)
 {
+#if defined(__AUI_USE_AMIGA__)
+	// The background window's surface has room round it: the picture's start
+	// moves, its pixels stay (ENV:CTP2_SCROLLSLACK, pixels across; 0: none,
+	// the pixels are shifted as before).
+	bool amigaOriginMoved = false;
+	uint64_t const amigaOriginT0 = amiga_perf ? amiga_ticks_us() : 0;
+	if (g_background && surf == g_background->TheSurface()
+	 && surf->IsThisA(aui_AmigaSurface::m_AmigaSurfaceClassId))
+	{
+		static sint32 s_slack = -1;
+		if (s_slack < 0)
+		{
+			char value[16];
+			s_slack = 1024;
+			if (amiga_env_value("CTP2_SCROLLSLACK", value, sizeof(value)))
+			{
+				s_slack = atoi(value);
+				if (s_slack < 0)    s_slack = 0;
+				if (s_slack > 4096) s_slack = 4096;
+			}
+		}
+		aui_AmigaSurface * const amigaSurf = static_cast<aui_AmigaSurface *>(surf);
+		if (s_slack > 0 && !amigaSurf->HasSlack())
+		{
+			BOOL const ok = amigaSurf->EnsureSlack(s_slack, s_slack / 2);
+			amiga_log("Scroll: the map surface %s %ld pixels of room across, %ld rows (pitch %ld)\n",
+			          ok ? "got" : "did not get", (long)s_slack, (long)(s_slack / 2), (long)surf->Pitch());
+			if (!ok) s_slack = 0;
+		}
+		// Past the map's edge (a world that does not wrap that way) no tile
+		// is painted: the strip the step uncovers is cleared there, where
+		// shifted pixels brought the black along by themselves.
+		sint32 mapWidth, mapHeight;
+		GetMapMetrics(&mapWidth, &mapHeight);
+		bool const pastEdge =
+			   (!g_theWorld->IsYwrap() && (m_mapViewRect.top  < 0 || m_mapViewRect.bottom > mapHeight))
+			|| (!g_theWorld->IsXwrap() && (m_mapViewRect.left < 0 || m_mapViewRect.right  > mapWidth));
+		amigaOriginMoved = amigaSurf->HasSlack()
+		                && amigaSurf->ScrollOrigin(deltaX, deltaX ? 0 : deltaY, pastEdge);
+	}
+#endif
 	char *      buffer;
 	AUI_ERRCODE errcode = surf->Lock(NULL, (LPVOID *)&buffer, 0);
 	Assert(errcode == AUI_ERRCODE_OK);
@@ -3244,9 +3617,74 @@ void TiledMap::ScrollPixels(sint32 deltaX, sint32 deltaY, aui_Surface *surf)
 
 	sint32		slop;
 
+#if defined(__AUI_USE_AMIGA__)
+	{
+		static int s_logged = 0;
+		if (amiga_perf && s_logged < 3)
+		{
+			++s_logged;
+			amiga_log("ScrollPixels: %ldx%ld pitch %ld at %p, by %ld,%ld\n",
+			          (long)w, (long)h, (long)pitch, (void *)buffer, (long)deltaX, (long)deltaY);
+		}
+	}
+	AMIGA_PERF_BEGIN(perfCopy);
+	if (amigaOriginMoved)
+	{
+		if (amiga_perf) amiga_perf_us[AMIGA_PERF_SCROLL_COPY] += (uint32_t)(amiga_ticks_us() - amigaOriginT0);
+		goto amiga_origin_moved;
+	}
+	if (g_amigaScrollOneAxis && g_background && g_c3ui && surf == g_background->TheSurface()
+	 && !(deltaX & 1) && !(w & 1) && !(pitch & 3) && !((uintptr_t)buffer & 3))
+	{
+		sint32 const screenW = g_c3ui->Width();
+		sint32 const screenH = g_c3ui->Height();
+		sint32 const bgX     = g_background->X();
+		sint32 const bgY     = g_background->Y();
+
+		sint32 first, last;
+		AmigaOpenRows(screenW, screenH, first, last);
+
+		sint32 r0 = first - bgY, r1 = last + 1 - bgY;
+		sint32 c0 = (-bgX) & ~1, c1 = (screenW - bgX + 1) & ~1;
+		if (r0 < 0) r0 = 0;
+		if (r1 > h) r1 = h;
+		if (c0 < 0) c0 = 0;
+		if (c1 > w) c1 = w & ~1;
+		if (r0 < r1 && c0 < c1)
+		{
+			AmigaShiftSurface(buffer, pitch, w, h, deltaX, deltaY, r0, r1, c0, c1);
+			goto amiga_shifted;
+		}
+	}
+#endif
 	if (deltaX)
 	{
 
+#if defined(__AUI_USE_AMIGA__)
+		if (deltaX < 0 && !(dx & 1) && !(w & 1))
+		{
+			// Each row in chunks as wide as the shift, from the right end to
+			// the left, every chunk copied upwards: a chunk never overlaps
+			// its own source, and the 68060 reads and writes fast RAM in
+			// bursts only going up (the loop below, all downwards, took twice
+			// as long: ~105 ms a step on an A4000).
+			sint32 const shiftLongs = dx >> 1;
+			for (i=0; i<h; i++)
+			{
+				if ((i & 63) == 63) amiga_ui_busy_tick();
+				uint32 * row = (uint32 *)(buffer + i * pitch);
+				for (sint32 end = (w - dx) >> 1; end > 0; end -= shiftLongs)
+				{
+					sint32 const start = (end > shiftLongs) ? end - shiftLongs : 0;
+					uint32 *       d = row + start + shiftLongs;
+					uint32 const * s = row + start;
+					for (j = end - start; j > 0; --j) *d++ = *s++;
+				}
+				for (j=0; j<shiftLongs; j++) row[j] = 0x00000000;
+			}
+		}
+		else
+#endif
 		if (deltaX<0)
 		{
 
@@ -3260,6 +3698,9 @@ void TiledMap::ScrollPixels(sint32 deltaX, sint32 deltaY, aui_Surface *surf)
 
 			for (i=0; i<h; i++)
 			{
+#if defined(__AUI_USE_AMIGA__)
+				if ((i & 63) == 63) amiga_ui_busy_tick();   // ~50 ms for all rows on an A4000
+#endif
 				for (j=0; j<copyWidth; j++)
 					*destPtr-- = *srcPtr--;
 
@@ -3277,6 +3718,9 @@ void TiledMap::ScrollPixels(sint32 deltaX, sint32 deltaY, aui_Surface *surf)
 			slop = (pitch / 4) - copyWidth;
 			for (i=0; i<h; i++)
 			{
+#if defined(__AUI_USE_AMIGA__)
+				if ((i & 63) == 63) amiga_ui_busy_tick();   // ~50 ms for all rows on an A4000
+#endif
 				for (j=0; j<copyWidth; j++)
 					*destPtr++ = *srcPtr++;
 				for (j=0; j<dx/2; j++)
@@ -3299,6 +3743,9 @@ void TiledMap::ScrollPixels(sint32 deltaX, sint32 deltaY, aui_Surface *surf)
 				slop = (pitch / 4) + (w >> 1);
 				for (i=0; i<copyHeight; i++)
 				{
+#if defined(__AUI_USE_AMIGA__)
+					if ((i & 63) == 63) amiga_ui_busy_tick();
+#endif
 					for (j=0; j<w>>1; j++)
 						*destPtr++ = *srcPtr++;
 					srcPtr -= slop;
@@ -3318,6 +3765,9 @@ void TiledMap::ScrollPixels(sint32 deltaX, sint32 deltaY, aui_Surface *surf)
 				slop = (pitch / 4) - (w >> 1);
 				for (i=0; i<copyHeight; i++)
 				{
+#if defined(__AUI_USE_AMIGA__)
+					if ((i & 63) == 63) amiga_ui_busy_tick();
+#endif
 					for (j=0; j<w>>1; j++)
 						*destPtr++ = *srcPtr++;
 
@@ -3335,10 +3785,91 @@ void TiledMap::ScrollPixels(sint32 deltaX, sint32 deltaY, aui_Surface *surf)
 		}
 	}
 
+#if defined(__AUI_USE_AMIGA__)
+amiga_shifted:
+	AMIGA_PERF_END(perfCopy, AMIGA_PERF_SCROLL_COPY);
+amiga_origin_moved:
+#endif
 	errcode = surf->Unlock(buffer);
 	Assert(errcode == AUI_ERRCODE_OK);
 	if (errcode != AUI_ERRCODE_OK) return;
+
+#if defined(__AUI_USE_AMIGA__)
+	// The card shifts its own copy of the background window the same way
+	// (as above: a horizontal shift, else a vertical one), so that only what
+	// is new crosses the bus (amiga_video.c).
+	// Only the band of rows no other window covers: under the control
+	// panel, the radar and the top bar the card holds those windows, which
+	// a shift would only spoil (the copy would send them again).
+	if (g_background && g_c3ui && surf == g_background->TheSurface())
+	{
+		// Every rectangle of the map no other window covers, not only the
+		// widest band: what lies beside the radar and the control panel was
+		// composed, compared and sent whole with every step.
+		s_amigaShifted.clear();
+
+		std::vector<RECT> open;
+		sint32 const dy = deltaX ? 0 : deltaY;
+		AmigaOpenRects(open, deltaX == 0);
+
+		sint32 const tw = GetZoomTilePixelWidth();
+		sint32 const th = GetZoomTilePixelHeight();
+
+		for (size_t n = 0; n < open.size(); ++n)
+		{
+			RECT const & r  = open[n];
+			sint32 const rw = r.right - r.left;
+			sint32 const rh = r.bottom - r.top;
+
+			// Worth it only when more stays than the strip the step
+			// uncovers and the tile beyond it (ScrollMap).
+			if (deltaX ? (rw < abs(deltaX) + 3 * tw || rh < 8)
+			           : (rh < abs(dy) + 2 * th || rw < 16))
+			{
+				continue;
+			}
+
+			if (amiga_video_scroll(r.left, r.top, rw, rh, deltaX, dy))
+			{
+				amiga_ui_scroll_frame(r.left, r.top, rw, rh, deltaX, dy);
+				RECT b = r;
+				OffsetRect(&b, -g_background->X(), -g_background->Y());
+				s_amigaShifted.push_back(b);
+			}
+		}
+
+		{
+			static int s_logged[2] = { 0, 0 };
+			if (amiga_perf && s_logged[deltaX == 0] < 1)
+			{
+				++s_logged[deltaX == 0];
+				for (size_t n = 0; n < open.size(); ++n)
+				{
+					amiga_log("Open: %ld,%ld-%ld,%ld\n", (long)open[n].left, (long)open[n].top,
+					          (long)open[n].right, (long)open[n].bottom);
+				}
+				amiga_log("Open: %lu rectangles, %lu shifted\n",
+				          (unsigned long)open.size(), (unsigned long)s_amigaShifted.size());
+			}
+		}
+	}
+#endif
 }
+
+#if defined(__AUI_USE_AMIGA__)
+// ENV:CTP2_TEST, F9: the whole map explored, so that checks of the display
+// (CTRL-F: frame, card and shadow) have terrain everywhere.
+void amiga_test_reveal(void)
+{
+	if (!g_tiledMap || !g_selected_item || !g_player[g_selected_item->GetVisiblePlayer()]) return;
+	g_player[g_selected_item->GetVisiblePlayer()]->m_vision->SetTheWholeWorldExplored();
+	g_director->AddCopyVision();
+	g_tiledMap->InvalidateMix();
+	g_tiledMap->InvalidateMap();
+	g_tiledMap->Refresh();
+	g_radarMap->Update();
+}
+#endif
 
 RECT TiledMap::EnsureRectOverlapMap(const RECT & rect) const
 {
@@ -3381,6 +3912,20 @@ bool TiledMap::ScrollMap(sint32 deltaX, sint32 deltaY)
 
 	RetargetTileSurface(g_background->TheSurface());
 
+#if defined(__AUI_USE_AMIGA__)
+	// Steps of several tiles (civ3_main.cpp) go as far as the map allows.
+	if (!g_theWorld->IsXwrap())
+	{
+		while ((deltaX < 0) && (m_mapViewRect.left + deltaX < GetMinMapLeft()))   ++deltaX;
+		while ((deltaX > 0) && (m_mapViewRect.right + deltaX > GetMaxMapRight())) --deltaX;
+	}
+	if (!g_theWorld->IsYwrap())
+	{
+		while ((deltaY < 0) && (m_mapViewRect.top + deltaY < GetMinMapTop()))       ++deltaY;
+		while ((deltaY > 0) && (m_mapViewRect.bottom + deltaY > GetMaxMapBottom())) --deltaY;
+	}
+	if (!deltaX && !deltaY) return false;
+#else
 	if (!g_theWorld->IsXwrap())
 	{
 		if ((deltaX < 0) && (m_mapViewRect.left + deltaX < GetMinMapLeft()))
@@ -3405,7 +3950,12 @@ bool TiledMap::ScrollMap(sint32 deltaX, sint32 deltaY)
 			deltaY = 0;
 		}
 	}
+#endif
 
+#if defined(__AUI_USE_AMIGA__)
+	if (amiga_perf) ++amiga_perf_us[AMIGA_PERF_SCROLL_STEPS];
+	AMIGA_PERF_BEGIN(perfOther);
+#endif
 	RECT mapViewRect = m_mapViewRect;
 	OffsetRect(&mapViewRect, deltaX, deltaY);
 	UpdateAndClipMapViewRect(EnsureRectOverlapMap(mapViewRect));
@@ -3415,7 +3965,15 @@ bool TiledMap::ScrollMap(sint32 deltaX, sint32 deltaY)
 	sint32 hscroll = GetZoomTilePixelWidth();
 	sint32 vscroll = GetZoomTilePixelHeight() / 2;
 	OffsetSprites(mapViewRect, deltaX * hscroll, deltaY * vscroll);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfOther, AMIGA_PERF_SCROLL_OTHER);
+	AMIGA_PERF_BEGIN(perfPixels);
+#endif
 	ScrollPixels(deltaX * hscroll, deltaY * vscroll, m_surface);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfPixels, AMIGA_PERF_SCROLL_PIXELS);
+	amiga_ui_busy_tick();   // the cursor moves during a scroll step too
+#endif
 
 	LockSurface();
 
@@ -3452,10 +4010,37 @@ bool TiledMap::ScrollMap(sint32 deltaX, sint32 deltaY)
 	}
 	repaintRect = EnsureRectOverlapMap(repaintRect);
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfTiles);
+#endif
 	RepaintTiles(repaintRect);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfTiles, AMIGA_PERF_SCROLL_TILES);
+#endif
 
 	RECT inflatedRepaintRect = repaintRect;
 
+#if defined(__AUI_USE_AMIGA__)
+	// As below, for steps of any size.
+	if (deltaX > 0) {
+		inflatedRepaintRect.left -= 1;
+		inflatedRepaintRect.top += 1;
+		inflatedRepaintRect.bottom += 1;
+	}
+	else if (deltaX < 0) {
+		inflatedRepaintRect.right += 1;
+		inflatedRepaintRect.top += 1;
+		inflatedRepaintRect.bottom += 1;
+	}
+	if (deltaY > 0) {
+		inflatedRepaintRect.right += 1;
+		inflatedRepaintRect.top -= 2;
+	}
+	else if (deltaY < 0) {
+		inflatedRepaintRect.right += 1;
+		inflatedRepaintRect.bottom += 2;
+	}
+#else
 	if (deltaX == 1) {
 		inflatedRepaintRect.left -= 1;
 		inflatedRepaintRect.top += 1;
@@ -3474,20 +4059,118 @@ bool TiledMap::ScrollMap(sint32 deltaX, sint32 deltaY)
 		inflatedRepaintRect.right += 1;
 		inflatedRepaintRect.bottom += 2;
 	}
+#endif
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfOverlays);
+#endif
 	RepaintHats(inflatedRepaintRect);
 	RepaintBorders(inflatedRepaintRect);
 	RepaintImprovements(inflatedRepaintRect);
 	RepaintCellText(inflatedRepaintRect);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfOverlays, AMIGA_PERF_SCROLL_OVERLAYS);
+#endif
 
 	UnlockSurface();
 
 	m_mapDirtyList->Flush();
 
-	InvalidateMix();
+#if defined(__AUI_USE_AMIGA__)
+	// Everything but what the other windows cover is mixed and composed
+	// again: under the control panel (a shaped window) every step cost a mix
+	// of the whole panel, ~120 ms on an A4000. What shows through its gaps
+	// waits for the end of the scroll (civapp.cpp).
+	{
+		aui_DirtyList open;
+		open.AddRect(const_cast<RECT *>(&g_backgroundViewport));
 
+		// What ScrollPixels shifted on the card and in the frame already
+		// shows the map shifted: of each such rectangle only the strip the
+		// step uncovered (and a tile beyond it, for what its tiles and
+		// sprites overlap) is mixed, composed and compared.
+		{
+			sint32 const hpx = abs(deltaX) * hscroll;
+			sint32 const vpx = abs(deltaY) * vscroll;
+			for (size_t n = 0; n < s_amigaShifted.size(); ++n)
+			{
+				RECT kept = s_amigaShifted[n];
+				if      (deltaX > 0) kept.right  -= hpx + hscroll;
+				else if (deltaX < 0) kept.left   += hpx + hscroll;
+				else if (deltaY > 0) kept.bottom -= vpx + 2 * vscroll;
+				else if (deltaY < 0) kept.top    += vpx + 2 * vscroll;
+				if (kept.left < kept.right && kept.top < kept.bottom)
+				{
+					open.SubtractRect(&kept);
+				}
+			}
+		}
+		s_amigaShifted.clear();
+
+		bool covered = false;
+		if (g_c3ui && g_background)
+		{
+			tech_WLList<aui_Region *> * windows = g_c3ui->ChildList();
+			ListPos position = windows->GetHeadPosition();
+			for (size_t n = windows->L(); n; --n)
+			{
+				aui_Region * window = windows->GetNext(position);
+				if (!window || window == g_background || window->IsHidden()) continue;
+
+				RECT r =
+				{
+					window->X() - g_background->X(),
+					window->Y() - g_background->Y(),
+					window->X() - g_background->X() + window->Width(),
+					window->Y() - g_background->Y() + window->Height()
+				};
+				if (open.SubtractRect(&r) != AUI_ERRCODE_UNHANDLED) covered = true;
+			}
+		}
+
+		{
+			// The open rectangles as they are (not one per grid cell). The
+			// grid's cells stay as they are, so that what is drawn later in
+			// the kept band still marks its own cells.
+			// ENV:CTP2_STRIPWRITE: what the step uncovered goes to the card
+			// whole, past the compare with what the card shows (all of it
+			// is new, bar a sea that looks the same a tile on). Worth it
+			// where writing a pixel costs little more than comparing one.
+			static int s_stripWrite = -1;
+			if (s_stripWrite < 0) s_stripWrite = amiga_env_flag("CTP2_STRIPWRITE") ? 1 : 0;
+
+			m_mixDirtyList->Flush();
+			ListPos p = open.GetHeadPosition();
+			for (size_t n = open.L(); n; --n)
+			{
+				RECT * r = open.GetNext(p);
+				m_mixDirtyList->AddRect(r);
+				if (s_stripWrite && g_background)
+				{
+					amiga_video_force_rect(r->left  + g_background->X(), r->top    + g_background->Y(),
+					                       r->right + g_background->X(), r->bottom + g_background->Y());
+				}
+			}
+			if (covered)
+			{
+				g_amigaMixStale     = true;
+				g_amigaLastScrollMs = amiga_ticks_ms();
+			}
+		}
+	}
+#else
+	InvalidateMix();
+#endif
+
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfSprites);
+#endif
 	g_theTradePool->Draw(m_surface, inflatedRepaintRect);
 	RepaintSprites(m_surface, inflatedRepaintRect, true);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfSprites, AMIGA_PERF_SCROLL_SPRITES);
+	amiga_ui_busy_tick();
+#endif
 
 	return true;
 }

@@ -57,6 +57,9 @@
 #include "aui_rectangle.h"
 #include "aui_ui.h"
 #include <locale.h>
+#if defined(__AUI_USE_AMIGA__)
+#include "amiga_platform.h"     // ENV:CTP2_PERF timers
+#endif
 
 #if defined(_JAPANESE)
 #include "japanese.h"
@@ -228,6 +231,19 @@ AUI_ERRCODE aui_BitmapFont::SetFilename( const MBCHAR * descriptor )
 
 AUI_ERRCODE aui_BitmapFont::Load( void )
 {
+#if defined(__AUI_USE_AMIGA__)
+	struct PerfScope
+	{
+		uint64_t t0;
+		PerfScope() : t0(amiga_perf ? amiga_ticks_us() : 0) {}
+		~PerfScope()
+		{
+			if (!amiga_perf) return;
+			amiga_perf_us[AMIGA_PERF_FONT_LOAD] += (uint32_t)(amiga_ticks_us() - t0);
+			++amiga_perf_us[AMIGA_PERF_FONT_LOADS];
+		}
+	} perfScope;
+#endif
 
 	Unload();
 
@@ -326,6 +342,19 @@ AUI_ERRCODE aui_BitmapFont::SetTTFFile( const MBCHAR * ttffile )
 
 AUI_ERRCODE aui_BitmapFont::SetPointSize( sint32 pointSize )
 {
+#if defined(__AUI_USE_AMIGA__)
+	struct PerfScope
+	{
+		uint64_t t0;
+		PerfScope() : t0(amiga_perf ? amiga_ticks_us() : 0) {}
+		~PerfScope()
+		{
+			if (!amiga_perf) return;
+			amiga_perf_us[AMIGA_PERF_FONT_SIZE] += (uint32_t)(amiga_ticks_us() - t0);
+			++amiga_perf_us[AMIGA_PERF_FONT_SIZES];
+		}
+	} perfScope;
+#endif
 
 // diabled because SetPointSize needed in linux debug version before m_surfaceList is populated	Assert( !HasCached() );
 	if ( HasCached() ) return AUI_ERRCODE_HACK;

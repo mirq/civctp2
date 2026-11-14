@@ -207,6 +207,9 @@ AUI_ERRCODE TargaImageFormat::LoadRIM(MBCHAR const * filename, aui_Image *image)
 	    (rhead->version != 1))
 	{
 		c3errors_ErrorDialog("Targa Load", "Invalid RIM file format '%s'", rname);
+#if defined(CTP2_AMIGA_BUILD)
+		g_ImageMapPF->freeData(buffer);
+#endif
 		return AUI_ERRCODE_LOADFAILED;
 	}
 
@@ -214,6 +217,9 @@ AUI_ERRCODE TargaImageFormat::LoadRIM(MBCHAR const * filename, aui_Image *image)
 	if (g_is565Format != record_is_565)
 	{
 		c3errors_ErrorDialog("Targa Load", "Invalid RIM file format '%s'", rname);
+#if defined(CTP2_AMIGA_BUILD)
+		g_ImageMapPF->freeData(buffer);
+#endif
 		return AUI_ERRCODE_LOADFAILED;
 	}
 
@@ -221,7 +227,25 @@ AUI_ERRCODE TargaImageFormat::LoadRIM(MBCHAR const * filename, aui_Image *image)
 	int height  = rhead->height;
 	int pitch   = rhead->pitch;
 
+#if defined(CTP2_AMIGA_BUILD)
+	// The archive's block is malloc'd for this load (no memory mapping on
+	// the Amiga) and the surface would not free a buffer it was handed (and
+	// cannot: the pixels start past the header): the pixels go into a buffer
+	// of the surface's own, and the block goes back at once.
+	AUI_ERRCODE errcode = image->LoadFileMapped(width, height, 16, pitch, NULL);
+	if (errcode == AUI_ERRCODE_OK && image->TheSurface())
+	{
+		uint8 * pixels = NULL;
+		if (image->TheSurface()->Lock(NULL, (LPVOID *)&pixels, 0) == AUI_ERRCODE_OK && pixels)
+		{
+			memcpy(pixels, image_data, (size_t)pitch * (size_t)height);
+			image->TheSurface()->Unlock(pixels);
+		}
+	}
+	g_ImageMapPF->freeData(buffer);
+#else
 	AUI_ERRCODE errcode = image->LoadFileMapped(width, height, 16, pitch, image_data);
+#endif
 	Assert( errcode == AUI_ERRCODE_OK );
 	if ( errcode != AUI_ERRCODE_OK )
 	{

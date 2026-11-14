@@ -398,6 +398,7 @@ GAME_EVENT_ERR GameEventManager::ArglistAddEvent(GAME_EVENT_INSERT insert,
 
 #if defined(__AUI_USE_AMIGA__)
 void amiga_ui_busy_tick(void);   // ui/aui_amiga/aui_amigaui.cpp
+#include "amiga_platform.h"
 #endif
 
 GAME_EVENT_ERR GameEventManager::Process()
@@ -447,7 +448,23 @@ GAME_EVENT_ERR GameEventManager::ProcessHead()
 			  event->GetSerial()
             ));
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfEvent);
 	GAME_EVENT_ERR  err     = event->Process();
+	if (amiga_perf)
+	{
+		// ENV:CTP2_PERF: the events that hold the game up.
+		uint32_t const ms = (uint32_t)((amiga_ticks_us() - perfEvent) / 1000);
+		if (ms >= 150)
+		{
+			amiga_log("Event %s took %lu ms\n",
+			          (m_processingEvent >= 0 && m_processingEvent < GEV_MAX) ? g_eventDescriptions[m_processingEvent].name : "?",
+			          (unsigned long)ms);
+		}
+	}
+#else
+	GAME_EVENT_ERR  err     = event->Process();
+#endif
 
     // Processing ready
 	m_processingEvent       = GEV_MAX;

@@ -67,6 +67,9 @@
 #include "dxver.h"
 extern BOOL g_exclusiveMode;
 #endif
+#if defined(__AUI_USE_AMIGA__)
+#include "amiga_platform.h"     // ENV:CTP2_PERF timers
+#endif
 
 aui_UI *g_ui = NULL;
 
@@ -768,9 +771,19 @@ AUI_ERRCODE aui_UI::ClipAndConsolidate(void)
 	static aui_Stencil *windowStencil = NULL;
 
 #if defined(__AUI_USE_AMIGA__)
+	// Which parts of the map's window go to the card from its own surface
+	// (ui/aui_amiga/aui_amigaui.h), as the windows stand now.
+	extern void amiga_ui_compose_begin(void);
+	amiga_ui_compose_begin();
 	s_dirtiedFromBelow.clear();
+	if (amiga_perf && m_dirtyList->L() > amiga_perf_us[AMIGA_PERF_UI_MAXRECTS])
+		amiga_perf_us[AMIGA_PERF_UI_MAXRECTS] = (uint32_t)m_dirtyList->L();
+	AMIGA_PERF_BEGIN(perfMin);
 #endif
 	m_dirtyList->Minimize();
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfMin, AMIGA_PERF_UI_MINIMIZE);
+#endif
 
 	if ( m_colorAreas || m_imageAreas )
 	{
@@ -826,6 +839,14 @@ AUI_ERRCODE aui_UI::ClipAndConsolidate(void)
 	for ( size_t i = m_childList->L(); i; i-- )
 	{
 		window = (aui_Window *)m_childList->GetPrev( position );
+
+#if defined(__AUI_USE_AMIGA__)
+		// The cursor between the windows: the composition goes to the
+		// windows' surfaces here, the frame on the card is still the last
+		// whole one (a scroll step mixes for ~50 ms on an A4000).
+		extern void amiga_ui_busy_tick(void);
+		amiga_ui_busy_tick();
+#endif
 
 		if ( !window->IsHidden() )
 		{
@@ -1226,6 +1247,13 @@ AUI_ERRCODE aui_UI::Draw( void )
 	AUI_ERRCODE errcode;
 
 	ClipAndConsolidate();
+
+#if defined(__AUI_USE_AMIGA__)
+	// The cursor between composing and copying (a scroll step spends ~100 ms
+	// in each on an A4000).
+	extern void amiga_ui_busy_tick(void);
+	amiga_ui_busy_tick();
+#endif
 
 	if (m_mouse == NULL) return AUI_ERRCODE_OK;
 
@@ -1956,7 +1984,14 @@ BOOL aui_UI::MinimizeOnAltTabOut( BOOL minimize )
 
 AUI_ERRCODE aui_UI::Process( void )
 {
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfIdle);
+#endif
 	Idle();
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfIdle, AMIGA_PERF_UI_IDLE);
+	AMIGA_PERF_BEGIN(perfMouse);
+#endif
 
 	// Scan human interface devices - when available
 	if (m_mouse)    HandleMouseEvents();
@@ -1964,7 +1999,14 @@ AUI_ERRCODE aui_UI::Process( void )
 	if (m_joystick) HandleJoystickEvents();
 	HandleActions();
 	HandleDestructiveActions();
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfMouse, AMIGA_PERF_UI_MOUSE);
+	AMIGA_PERF_BEGIN(perfDraw);
+#endif
 	Draw();
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfDraw, AMIGA_PERF_UI_DRAW);
+#endif
 
 	return AUI_ERRCODE_OK;
 }

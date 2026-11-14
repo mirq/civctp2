@@ -90,6 +90,13 @@ public:
 
 	MBCHAR *FindFile(C3DIR dir, const MBCHAR *filename, MBCHAR *path,
 	                 bool silent = false, bool check_prjfile = true, bool checkScenario = true, bool checkLocalizedPath = true);
+#if defined(CTP2_AMIGA_BUILD)
+	// FindFile's search without the Amiga's memo of its answers (each try
+	// is a DOS Lock: tens of milliseconds a file on a 68060).
+	MBCHAR *FindFileUncached(C3DIR dir, const MBCHAR *filename, MBCHAR *path,
+	                 bool silent, bool check_prjfile, bool checkScenario, bool checkLocalizedPath);
+	void    ForgetFoundFiles(void);
+#endif
 
 	MBCHAR *GetSpecificPath(C3DIR dir, MBCHAR *path, BOOL local);
 

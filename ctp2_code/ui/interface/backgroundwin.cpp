@@ -55,6 +55,12 @@ extern Network			g_network;
 
 extern RECT				g_backgroundViewport;
 
+#if defined(__AUI_USE_AMIGA__)
+#include "amiga_platform.h"     // ENV:CTP2_PERF timers
+void amiga_ui_busy_tick(void);  // ui/aui_amiga/aui_amigaui.cpp: the cursor between the steps
+void amiga_ui_direct_window(aui_Window *window);    // the map goes to the card from this window's surface
+#endif
+
 #ifdef _DEBUG
 #include "DataCheck.h"
 extern DataCheck		*g_dataCheck;
@@ -118,6 +124,10 @@ sint32 backgroundWin_Initialize(bool fullscreen)
 	Assert( g_background != NULL );
 	if ( !g_background ) return -1;
 
+#if defined(__AUI_USE_AMIGA__)
+	amiga_ui_direct_window(g_background);
+#endif
+
 	return 0;
 }
 
@@ -127,6 +137,10 @@ void backgroundWin_Cleanup(void)
     {
     	g_c3ui->RemoveWindow(g_background->Id());
     }
+
+#if defined(__AUI_USE_AMIGA__)
+	amiga_ui_direct_window(NULL);
+#endif
 
 	delete g_background;
 	g_background = NULL;
@@ -157,19 +171,38 @@ AUI_ERRCODE background_draw_handler(LPVOID bg)
 		return AUI_ERRCODE_OK;
 	}
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfMix);
+#endif
 	g_tiledMap->UpdateMixFromMap(surface);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfMix, AMIGA_PERF_MAP_MIX);
+	amiga_ui_busy_tick();   // after a scroll step this mixed the whole map
+	AMIGA_PERF_BEGIN(perfWater);
+#endif
 
 	if (g_theProfileDB->IsWaterAnim())
     {
         g_tiledMap->DrawWater();
     }
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfWater, AMIGA_PERF_MAP_WATER);
+	AMIGA_PERF_BEGIN(perfSprites);
+#endif
 
 	const RECT & paintRect = g_tiledMap->GetMapViewRect();
 	g_theTradePool->Draw(surface, paintRect);
 	g_tiledMap->RepaintSprites(surface, paintRect, false);
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfSprites, AMIGA_PERF_MAP_SPRITES);
+	amiga_ui_busy_tick();
+#endif
 
 	g_tiledMap->DrawUnfinishedMove(surface);
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfHilite);
+#endif
 	POINT pos;
 	pos.y = mouse->Y() - back->Y();
 	if (pos.y < back->Height())
@@ -179,6 +212,9 @@ AUI_ERRCODE background_draw_handler(LPVOID bg)
 		g_tiledMap->DrawLegalMove(surface);
 		g_screenManager->UnlockSurface();
 	}
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfHilite, AMIGA_PERF_MAP_HILITE);
+#endif
 
 #ifdef _PLAYTEST
 	switch(g_debugOwner)

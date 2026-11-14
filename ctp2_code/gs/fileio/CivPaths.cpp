@@ -456,8 +456,53 @@ MBCHAR *CivPaths::MakeAssetPath
 	else return NULL;
 }
 
+#if defined(CTP2_AMIGA_BUILD)
+#include <map>
+#include <string>
+#include "amiga_platform.h"
+
+// The answers FindFile gave, by directory, flags and name ("" for none): the
+// game's data does not change while it runs, and every path FindFile tries is
+// a DOS Lock. Forgotten when the scenario or data paths change.
+static std::map<std::string, std::string> s_foundFiles;
+
+void CivPaths::ForgetFoundFiles(void)
+{
+	s_foundFiles.clear();
+}
+
 MBCHAR *CivPaths::FindFile(C3DIR dir, const MBCHAR *filename, MBCHAR *path,
                            bool silent, bool check_prjfile, bool checkScenario, bool checkLocalizedPath)
+{
+	if (!filename || !path) return FindFileUncached(dir, filename, path, silent, check_prjfile, checkScenario, checkLocalizedPath);
+
+	char head[32];
+	sprintf(head, "%d%c%c%c|", (int)dir, check_prjfile ? 'p' : '-', checkScenario ? 's' : '-', checkLocalizedPath ? 'l' : '-');
+	std::string const key = std::string(head) + filename;
+
+	if (amiga_perf) ++amiga_perf_us[AMIGA_PERF_PATH_CALLS];
+	std::map<std::string, std::string>::const_iterator const found = s_foundFiles.find(key);
+	if (found != s_foundFiles.end())
+	{
+		if (found->second.empty()) return NULL;
+		strcpy(path, found->second.c_str());
+		return path;
+	}
+
+	if (amiga_perf) ++amiga_perf_us[AMIGA_PERF_PATH_MISSES];
+	AMIGA_PERF_BEGIN(perfPath);
+	MBCHAR * const result = FindFileUncached(dir, filename, path, silent, check_prjfile, checkScenario, checkLocalizedPath);
+	AMIGA_PERF_END(perfPath, AMIGA_PERF_PATH_US);
+	s_foundFiles[key] = result ? std::string(result) : std::string();
+	return result;
+}
+
+MBCHAR *CivPaths::FindFileUncached(C3DIR dir, const MBCHAR *filename, MBCHAR *path,
+                           bool silent, bool check_prjfile, bool checkScenario, bool checkLocalizedPath)
+#else
+MBCHAR *CivPaths::FindFile(C3DIR dir, const MBCHAR *filename, MBCHAR *path,
+                           bool silent, bool check_prjfile, bool checkScenario, bool checkLocalizedPath)
+#endif
 {
 	MBCHAR			fullPath[_MAX_PATH];
 
@@ -756,6 +801,9 @@ MBCHAR *CivPaths::GetScenarioRootPath(MBCHAR *path)
 
 void CivPaths::SetCurScenarioPath(const MBCHAR *path)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	ForgetFoundFiles();
+#endif
 	delete [] m_curScenarioPath;
 	m_curScenarioPath = new MBCHAR[_MAX_PATH];
 	memset(m_curScenarioPath, 0, _MAX_PATH);
@@ -769,12 +817,18 @@ MBCHAR *CivPaths::GetCurScenarioPath(void)
 
 void CivPaths::ClearCurScenarioPath(void)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	ForgetFoundFiles();
+#endif
 	delete[] m_curScenarioPath;
 	m_curScenarioPath = NULL;
 }
 
 void CivPaths::SetCurScenarioPackPath(const MBCHAR *path)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	ForgetFoundFiles();
+#endif
 	delete[] m_curScenarioPackPath;
 	m_curScenarioPackPath = new MBCHAR[_MAX_PATH];
 	memset(m_curScenarioPackPath, 0, _MAX_PATH);
@@ -788,6 +842,9 @@ MBCHAR *CivPaths::GetCurScenarioPackPath(void)
 
 void CivPaths::ClearCurScenarioPackPath(void)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	ForgetFoundFiles();
+#endif
 	delete[] m_curScenarioPackPath;
 	m_curScenarioPackPath = NULL;
 }
@@ -855,6 +912,9 @@ std::vector<MBCHAR const *> const & CivPaths::GetExtraDataPaths(void) const
 //----------------------------------------------------------------------------
 void CivPaths::InsertExtraDataPath(MBCHAR const * path)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	ForgetFoundFiles();
+#endif
 	MBCHAR *	newPath	= new MBCHAR[1 + strlen(path)];
 	strcpy(newPath, path);
 	m_extraDataPaths.insert(m_extraDataPaths.begin(), newPath);
@@ -878,6 +938,9 @@ void CivPaths::InsertExtraDataPath(MBCHAR const * path)
 //----------------------------------------------------------------------------
 void CivPaths::ResetExtraDataPaths(void)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	ForgetFoundFiles();
+#endif
 	for
 	(
 		std::vector<MBCHAR const *>::iterator	p = m_extraDataPaths.begin();
@@ -1037,6 +1100,9 @@ const LanguageRecord* CivPaths::FindLanguage()
 
 void CivPaths::SetLocalizedPath(const MBCHAR *path)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	ForgetFoundFiles();
+#endif
 	sprintf(m_localizedPath, "%s", path);
 	ReplaceFileSeperator(m_localizedPath);
 	if(g_theProfileDB)

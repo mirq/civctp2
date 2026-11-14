@@ -47,6 +47,9 @@
 
 #include "c3.h"
 #include "EditQueue.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include <sys/stat.h>         // the saved queues' folder date
+#endif
 
 #include "aui_ldl.h"
 #include "ctp2_Window.h"
@@ -405,6 +408,13 @@ AUI_ERRCODE EditQueue::Initialize()
 	Assert(err == AUI_ERRCODE_OK);
 	return err;
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+void EditQueue::Preload()
+{
+	Initialize();
+}
+#endif
 
 AUI_ERRCODE EditQueue::Display(const Unit & city)
 {
@@ -913,6 +923,27 @@ void EditQueue::UpdateChoiceLists()
 
 void EditQueue::UpdateFileLists()
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// The saved queues' folder is read again only when it changed (its date
+	// moves with every file saved or deleted): every open of the build
+	// manager scanned it and built a row for each file.
+	{
+		static bool   s_listed = false;
+		static time_t s_listedDate = 0;
+		MBCHAR dir[_MAX_PATH];
+		struct stat st;
+		bool const known = g_civPaths->GetSavePath(C3SAVEDIR_QUEUES, dir) && stat(dir, &st) == 0;
+		if (known && s_listed && st.st_mtime == s_listedDate && m_queueFileList->NumItems() > 0)
+		{
+			ClearChoiceList(m_queueContents);
+			m_queueName->SetText("");
+			ShowSelectedInfo();
+			return;
+		}
+		s_listed     = known;
+		s_listedDate = known ? st.st_mtime : 0;
+	}
+#endif
 	m_queueFileNames.DeleteAll();
 
 	if (!c3files_getfilelist(C3SAVEDIR_QUEUES, NULL, &m_queueFileNames)) {

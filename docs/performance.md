@@ -7,19 +7,24 @@ Measured on the reference A4000 (68060, Radeon RTG behind Zorro III/Prometheus,
 
 | operation | cost |
 |---|---|
-| CPU write to card | ~2.3 Mpixels/s, 0.43 µs/px, a full 800×600 frame takes ~205 ms |
+| Zorro III bus to the card | ~15 MB/s (the bus's own rate; not measured by the game) |
+| the game's copy to the card (read, byte swap, write) | measured ~2.3 Mpixels/s, 0.43 µs/px, ~4.6 MB/s; a full 800×600 frame took ~205 ms. Well below the bus rate; the cause is not known yet |
 | fast RAM read | ~36 MB/s |
 | `memcpy` / `memset` in fast RAM | ~17 / ~16 MB/s (every copy method measured 18–27 MB/s; `move16` was no faster) |
 | shadow compare | 0.10 µs/px (branchless longword XOR), 0.17 µs/px with early-out |
 | card `BltBitMap` scroll | ~0 ms of CPU time |
 | full-map copy in RAM | ~50 ms |
 
-Rendering is bounded by memory bandwidth, not by the card's bandwidth.
+Rendering is bounded by memory bandwidth. At the bus rate a pixel costs
+about 0.13 µs to write and 0.10 µs to compare, so the diff pays only where
+less than about a quarter of the compared pixels changed. See
+[graphics-pipeline.md](graphics-pipeline.md), section 1.
 
 ## What each change bought
 
 | change | effect |
 |---|---|
+| screen cleared to black through the lock at open | fixes the grey 16-pixel runs first taken for lost writes; the scrub (`CTP2_SCRUB`) is now only a safety net |
 | shadow diff, sending only the rects that changed | baseline for every result below |
 | mix dirty grid 128 → 32 px (`TiledMap::InitGrid`) | idle map 15.5 → 24 fps |
 | stencil window (control panel) redraws only what changed | ~150 ms → near 0 per status-bar change |

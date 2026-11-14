@@ -59,6 +59,15 @@ CTRL-C quits.
 | `CTP2_MODE` | screen mode id in hex (from the screen mode prefs); else the closest 16-bit RTG mode |
 | `CTP2_AHI_RATE` | AHI mixing rate, 8000-48000 (default 16000 on the 68060, 22050 on the PowerPC) |
 | `CTP2_LANGUAGE` | ISO 639-1 code (`en`, `de`, ...); else the Locale preferences |
+| `CTP2_UIPRELOAD` | when the main windows (build manager, city window, managers, diplomacy...) are built: `lazy` (default) at their first opening, `start` (or `preload`) while a game loads (a few seconds longer), `idle` (or `lazypreload`) one at a time on the map while the mouse and keys rest |
+| `CTP2_SCRUB` | full rows sent again to the card every 80 ms, past the comparison (default 4, `0`: none) |
+| `CTP2_SCROLLSLACK` | spare pixels across round the map's surface, so that a scroll moves no memory (default 1024, about 11 MB at 1024x768; `0`: none) |
+| `CTP2_DIRECTMAP` | `0`: the map goes through the composed frame, as before (default: straight from its own surface to the card) |
+| `CTP2_STRIPWRITE` | `1`: what a scroll step uncovers goes to the card without the compare (default off) |
+| `CTP2_TEST` | `1`: F9 explores the whole map (display checks) |
+| `CTP2_PERF` | `1`: timings of the frame's phases, the copies, scrolling, resource loads and slow game events every 3 s in `ctp2.log` |
+
+Pictures, fonts, sprites and sounds stay in memory once loaded (until less than 24 MB of fast memory is free), so a window opens faster the second time; 128 MB or more is assumed.
 
 ## How it is put together
 
@@ -75,8 +84,9 @@ CTRL-C quits.
 | `anet_stub.c` | no multiplayer: every ActiveNet call fails |
 | `../../ui/aui_amiga` | the UI backend: surfaces in fast RAM, dirty-rectangle frame copy, software cursor, keys |
 
-Only what changed crosses the bus: the 68060 writes a Zorro III card at about
-5 MB/s, so a whole 800x600 frame would take ~180 ms.
+Only what changed crosses the bus: Zorro III carries about 15 MB/s, and the
+game's own copy (read, byte swap, write) was measured at about 4.6 MB/s on an
+A4000, so a whole 800x600 frame takes 64 to 205 ms. More in `docs/`.
 
 ## Byte order
 

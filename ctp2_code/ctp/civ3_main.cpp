@@ -246,6 +246,45 @@ BOOL                                g_helpMode = TRUE;
 
 static uint32                       s_scrollcurtick =0;
 static uint32                       s_lastscrolltick=0;
+#if defined(__AUI_USE_AMIGA__)
+// A scroll step on a 68060 costs ~200 ms however far it goes (the whole map
+// surface is shifted and the viewport composed and compared), so when the
+// steps come that slowly each one goes further: two tiles across, four rows
+// (one tile's height) down. Steps less than 120 ms apart stay single.
+extern bool g_amigaScrollOneAxis;   // tiledmap.cpp
+
+// Returns false (no step) when the scroll turns from across to up or down or
+// back within a scroll loop: that ends the loop, whose end paints the whole map
+// again, and the next loop goes the new way. Within a loop the steps keep to
+// one axis, so each shifts only what is on the screen (tiledmap.cpp).
+static bool AmigaScrollMap(sint32 deltaX, sint32 deltaY)
+{
+	static uint32 s_lastStep = 0;
+	static int    s_axis     = 0;
+	uint32 const now  = GetTickCount();
+	int const    axis = deltaX ? 1 : 2;
+	if (s_axis && s_axis != axis && now - s_lastStep < 500)
+	{
+		s_axis = 0;
+		return false;
+	}
+	s_axis = axis;
+	bool const   slow = s_lastStep && now - s_lastStep >= 120 && now - s_lastStep < 1000;
+	s_lastStep = now;
+	if (slow)
+	{
+		deltaX *= 2;
+		deltaY *= 4;
+	}
+	g_amigaScrollOneAxis = true;
+	// No step (the map's edge): the scroll loop ends, where it went round
+	// composing and comparing the same picture for as long as the key or
+	// the mouse held (~26 ms a turn, the game standing still meanwhile).
+	bool const moved = g_tiledMap->ScrollMap(deltaX, deltaY);
+	g_amigaScrollOneAxis = false;
+	return moved;
+}
+#endif
 static sint32                       s_scrolltime =k_SMOOTH_START_TIME;
 static uint32                       s_accelTickStart = 0;
 
@@ -600,8 +639,14 @@ bool ui_CheckForScroll(void)
 	sint32		hscroll = g_tiledMap->GetZoomTilePixelWidth();
 	sint32		vscroll = g_tiledMap->GetZoomTilePixelHeight()/2;
 
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_BEGIN(perfPanel);
+#endif
 	if (g_controlPanel)
 		g_controlPanel->Idle();
+#if defined(__AUI_USE_AMIGA__)
+	AMIGA_PERF_END(perfPanel, AMIGA_PERF_PANEL_IDLE);
+#endif
 
 	g_tiledMap->SetScrolling(false);
 
@@ -678,14 +723,26 @@ bool ui_CheckForScroll(void)
 			if (deltaX)
 				deltaY = 0;
 
+#if !defined(__AUI_USE_AMIGA__)
 			if(scrolled_last_time) {
 				scrolled_last_time = false;
 				return false;
 			}
 			scrolled_last_time = true;
+#else
+			// Every call scrolls: a false here ended CivApp::ProcessUI's
+			// scroll loop after each step, and the loop's end redraws the
+			// whole map (~180 ms a step on an A4000). The loop takes the
+			// window's messages itself, so the key's release still stops it.
+			(void)scrolled_last_time;
+#endif
 
 			g_tiledMap->SetScrolling(true);
+#if defined(__AUI_USE_AMIGA__)
+			if (!AmigaScrollMap(deltaX, deltaY)) return false;
+#else
 			g_tiledMap->ScrollMap(deltaX, deltaY);
+#endif
 
 			return true;
 		}
@@ -737,6 +794,15 @@ bool ui_CheckForScroll(void)
 			isMouseScrolling = true;
 		}
 
+#if defined(__AUI_USE_AMIGA__)
+		// At the map's edge there is no scroll to begin: with the pointer
+		// resting on the screen's edge there, a scroll loop began and ended
+		// with every other frame, and its end paints the whole map again.
+		if (scrolled && !g_tiledMap->CanScrollMap(deltaX, deltaY))
+		{
+			scrolled = false;
+		}
+#endif
 		if(scrolled) {
 			if(!scrolled_last_time) {
 				scroll_start = GetTickCount();
@@ -791,7 +857,15 @@ bool ui_CheckForScroll(void)
 		else {
 			if ((s_scrollcurtick - s_lastscrolltick) > k_TICKS_PER_SCROLL) {
 				s_lastscrolltick = GetTickCount();
+#if defined(__AUI_USE_AMIGA__)
+				if (!AmigaScrollMap(deltaX, deltaY))
+				{
+					scrolled_last_time = false;
+					return false;
+				}
+#else
 				g_tiledMap->ScrollMap(deltaX, deltaY);
+#endif
 			}
 		}
 	}
@@ -902,15 +976,25 @@ void ZoomPad_ZoomCallback()
 
 int tile_Initialize(BOOL isRestoring)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// The tile engine's steps and their time (ctp2.log).
+#define AMIGA_TILE_STEP(name) amiga_log("Tile engine: %s at %lu ms\n", name, (unsigned long)amiga_ticks_ms())
+#else
+#define AMIGA_TILE_STEP(name)
+#endif
+	AMIGA_TILE_STEP("start");
 	g_tiledMap = new TiledMap(*g_theWorld->GetSize());
 
 	ZoomPad_ZoomCallback();
 	g_tiledMap->SetZoomCallback(ZoomPad_ZoomCallback);
 
+	AMIGA_TILE_STEP("tile set");
 	g_tiledMap->LoadTileset();
 
+	AMIGA_TILE_STEP("post-processing the map");
 	if (!isRestoring)
 		g_tiledMap->PostProcessMap();
+	AMIGA_TILE_STEP("initialize");
 
 	RECT rect =
 	{
@@ -922,7 +1006,9 @@ int tile_Initialize(BOOL isRestoring)
 
 	g_tiledMap->Initialize(&rect);
 
+	AMIGA_TILE_STEP("refresh");
 	g_tiledMap->Refresh();
+	AMIGA_TILE_STEP("done");
 
 	return 0;
 }
@@ -1510,7 +1596,10 @@ int main(int argc, char **argv)
 	{
 		return 20;
 	}
+#if !defined(CTP2_AMIGA_060)
+	// 68060: from libnix's exit list, after the C++ destructors (amiga_platform.c).
 	atexit(amiga_platform_exit);
+#endif
 #endif
 	atexit(AtExitProc);
 	int const   r = CivMain(argc, argv);
@@ -1789,10 +1878,127 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 	msg.wParam  = 0;
 #endif
 
+#if defined(__AUI_USE_AMIGA__)
+	// ENV:CTP2_PERF: every 3 seconds, where the frames' time went.
+	bool const perf      = amiga_env_flag("CTP2_PERF") != 0;
+	uint32     perfStart = amiga_ticks_ms();
+	uint32     perfFrames = 0;
+	uint64_t   perfGameUs = 0;
+	uint64_t   perfWaitUs = 0;
+#endif
+
 	for (gDone = FALSE; !gDone; )
 	{
 		uint32 frameStartTick = GetTickCount();
+#if defined(__AUI_USE_AMIGA__)
+		uint64_t const perfT0 = perf ? amiga_ticks_us() : 0;
+#endif
 		g_civApp->Process();
+#if defined(__AUI_USE_AMIGA__)
+		if (perf)
+		{
+			perfGameUs += amiga_ticks_us() - perfT0;
+			++perfFrames;
+			uint32 const now = amiga_ticks_ms();
+			if (now - perfStart >= 3000)
+			{
+				uint32 pixels = 0, copyUs = 0, copies = 0;
+				amiga_video_stats(&pixels, &copyUs, &copies);
+				amiga_log("Perf: %lu frames in %lu ms; game %lu ms (copies inside it included), "
+				          "copy %lu ms for %lu kpixels in %lu calls, wait %lu ms\n",
+				          (unsigned long)perfFrames, (unsigned long)(now - perfStart),
+				          (unsigned long)(perfGameUs / 1000), (unsigned long)(copyUs / 1000),
+				          (unsigned long)(pixels / 1000), (unsigned long)copies,
+				          (unsigned long)(perfWaitUs / 1000));
+				amiga_log("Perf:   map layer %lu ms, ui %lu ms, director %lu ms, robot %lu ms, "
+				          "sound %lu ms, events %lu ms, card writes %lu ms\n",
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_MAP] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_UI] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_DIRECTOR] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_ROBOT] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_SOUND] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_EVENTS] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_WRITE] / 1000));
+				amiga_log("Perf:   ui idle %lu ms, ui input %lu ms, ui draw %lu ms; map mix %lu ms, "
+				          "water %lu ms, sprites %lu ms, restore %lu ms, hilite %lu ms\n",
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_UI_IDLE] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_UI_MOUSE] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_UI_DRAW] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_MAP_MIX] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_MAP_WATER] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_MAP_SPRITES] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_MAP_RESTORE] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_MAP_HILITE] / 1000));
+				if (amiga_perf_us[AMIGA_PERF_SCROLL_PIXELS] || amiga_perf_us[AMIGA_PERF_SCROLL_TILES])
+				{
+					amiga_log("Perf:   scroll: pixels %lu ms, tiles %lu ms, overlays %lu ms, sprites %lu ms, other %lu ms\n",
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_PIXELS] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_TILES] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_OVERLAYS] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_SPRITES] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_OTHER] / 1000));
+					amiga_log("Perf:   scroll loop %lu ms (ui %lu ms, net %lu ms), panel idle %lu ms\n",
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_LOOP] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_UI] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_NET] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_PANEL_IDLE] / 1000));
+					amiga_log("Perf:   %lu scroll steps; scroll copy %lu ms, busy ticks %lu ms; card: shifts %lu ms, lock %lu ms, compare %lu ms\n",
+					          (unsigned long)amiga_perf_us[AMIGA_PERF_SCROLL_STEPS],
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_SCROLL_COPY] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_BUSY] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_CARD_SHIFT] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_CARD_LOCK] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_CARD_DIFF] / 1000));
+				}
+				if (amiga_perf_us[AMIGA_PERF_RES_MISSES] || amiga_perf_us[AMIGA_PERF_PATH_MISSES] || amiga_perf_us[AMIGA_PERF_LDL_BUILDS])
+				{
+					amiga_log("Perf:   resources: %lu hits, %lu loaded (find %lu ms, load %lu ms); paths: %lu, %lu searched (%lu ms); layouts built: %lu (%lu ms); free fast %lu KB\n",
+					          (unsigned long)amiga_perf_us[AMIGA_PERF_RES_HITS],
+					          (unsigned long)amiga_perf_us[AMIGA_PERF_RES_MISSES],
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_RES_FIND] / 1000),
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_RES_LOAD] / 1000),
+					          (unsigned long)amiga_perf_us[AMIGA_PERF_PATH_CALLS],
+					          (unsigned long)amiga_perf_us[AMIGA_PERF_PATH_MISSES],
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_PATH_US] / 1000),
+					          (unsigned long)amiga_perf_us[AMIGA_PERF_LDL_BUILDS],
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_LDL_US] / 1000),
+					          amiga_avail_fast() / 1024);
+				}
+				if (amiga_perf_us[AMIGA_PERF_FONT_LOADS] || amiga_perf_us[AMIGA_PERF_FONT_SIZES])
+				{
+					amiga_log("Perf:   fonts: %lu loads %lu ms, %lu point sizes %lu ms\n",
+					          (unsigned long)amiga_perf_us[AMIGA_PERF_FONT_LOADS],
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_FONT_LOAD] / 1000),
+					          (unsigned long)amiga_perf_us[AMIGA_PERF_FONT_SIZES],
+					          (unsigned long)(amiga_perf_us[AMIGA_PERF_FONT_SIZE] / 1000));
+				}
+				amiga_log("Perf:   ui dirty list: minimize %lu ms, at most %lu rects\n",
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_UI_MINIMIZE] / 1000),
+				          (unsigned long)amiga_perf_us[AMIGA_PERF_UI_MAXRECTS]);
+				amiga_log("Perf:   sprites: layer %lu ms, director %lu ms, terrain overlay %lu ms, city names %lu ms\n",
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_SPR_LAYER] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_SPR_DIRECTOR] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_SPR_OVERLAY] / 1000),
+				          (unsigned long)(amiga_perf_us[AMIGA_PERF_SPR_NAMES] / 1000));
+				{
+					extern uint32 g_amigaCursorGapMax, g_amigaCursorGapOver;
+					extern uintptr_t g_amigaCursorGapFrom, g_amigaCursorGapTo;
+					amiga_log("Perf:   cursor: longest wait %lu ms (from +%lx to +%lx), %lu waits of 50 ms or more\n",
+					          (unsigned long)g_amigaCursorGapMax,
+					          (unsigned long)(g_amigaCursorGapFrom - (uintptr_t)&amiga_log),
+					          (unsigned long)(g_amigaCursorGapTo - (uintptr_t)&amiga_log),
+					          (unsigned long)g_amigaCursorGapOver);
+					g_amigaCursorGapMax  = 0;
+					g_amigaCursorGapOver = 0;
+				}
+				memset(amiga_perf_us, 0, sizeof(amiga_perf_us));
+				perfStart  = now;
+				perfFrames = 0;
+				perfGameUs = 0;
+				perfWaitUs = 0;
+			}
+		}
+#endif
 
 #if defined(__AUI_USE_SDL__)
 		SDL_Event event;
@@ -1892,7 +2098,9 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 				uint32 const elapsed = GetTickCount() - frameStartTick;
 				if (elapsed >= TICKS_PER_FRAME) break;
 
+				uint64_t const waitT0 = perf ? amiga_ticks_us() : 0;
 				amiga_input_wait(TICKS_PER_FRAME - elapsed);
+				if (perf) perfWaitUs += amiga_ticks_us() - waitT0;
 
 				bool pressed = false;
 				if (!g_c3ui->PumpEvents(&pressed))
@@ -1901,7 +2109,7 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 					break;
 				}
 				g_c3ui->AmigaDrawScreen();
-				if (pressed) break;
+				if (pressed || gDone) break;
 			}
 
 		}
@@ -2293,6 +2501,10 @@ BOOL ExitGame(void)
 	return (e != 0);
 #elif defined(__AUI_USE_DIRECTX__)
 	return PostMessage(gHwnd, WM_CLOSE, 0, 0);
+#elif defined(__AUI_USE_AMIGA__)
+	// The main loop ends after this frame (no event queue to post to).
+	gDone = TRUE;
+	return TRUE;
 #else
 	return TRUE;
 #endif

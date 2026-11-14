@@ -194,8 +194,10 @@ sint32 aui_AmigaMouse::ManipulateInputs(aui_MouseEvent *data, BOOL add)
 	else if (!add)
 	{
 		// The UI wants a mouse event now and then even when nothing moved
-		// (rollovers, timed tooltips), as the SDL mouse gives it.
-		uint32 const TICKS_PER_FRAME = 1000 / 60;
+		// (rollovers, timed tooltips), as the SDL mouse gives it (60 a
+		// second there). Ten a second here: each one walks every window's
+		// controls, ~6 ms on an A4000, and a mouse at rest needs no more.
+		uint32 const TICKS_PER_FRAME = 1000 / 10;
 		if (currentFrameTick > m_lastFrameTick + TICKS_PER_FRAME)
 		{
 			m_lastFrameTick = currentFrameTick;
@@ -258,6 +260,13 @@ AUI_ERRCODE	aui_AmigaMouse::BltWindowToPrimary(aui_Window *window)
 		RECT screenDirtyRect = *windowDirtyRect;
 		OffsetRect(&screenDirtyRect, windowX, windowY);
 
+		// The map's window where nothing covers it: marked, not copied.
+		if (static_cast<aui_AmigaUI *>(g_ui)->IsDirectRect(window, screenDirtyRect))
+		{
+			Show(screenDirtyRect);
+			continue;
+		}
+
 		AUI_ERRCODE errcode = g_ui->BltToSecondary(
 				screenDirtyRect.left,
 				screenDirtyRect.top,
@@ -299,6 +308,14 @@ AUI_ERRCODE	aui_AmigaMouse::BltDirtyRectInfoToPrimary()
 		RECT *windowDirtyRect = &dri->rect;
 		RECT screenDirtyRect = *windowDirtyRect;
 		OffsetRect(&screenDirtyRect, window->X(), window->Y());
+
+		// The map's window where nothing covers it: marked, not copied; the
+		// card gets it from the window's own surface (aui_amigaui.h).
+		if (static_cast<aui_AmigaUI *>(g_ui)->IsDirectRect(window, screenDirtyRect))
+		{
+			Show(screenDirtyRect);
+			continue;
+		}
 
 		AUI_ERRCODE errcode = g_ui->BltToSecondary(
 				screenDirtyRect.left,

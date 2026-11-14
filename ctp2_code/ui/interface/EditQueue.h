@@ -95,6 +95,11 @@ public:
 	~EditQueue();
 
 	static AUI_ERRCODE Display(const Unit & city);
+#if defined(CTP2_AMIGA_BUILD)
+	// Builds the window without showing it (ENV:CTP2_UIPRELOAD,
+	// ui/interface/amiga_uipreload.cpp).
+	static void Preload();
+#endif
 	static AUI_ERRCODE Display(const UnitDynamicArray & cities);
 	static AUI_ERRCODE Hide();
 	static AUI_ERRCODE Cleanup();
