@@ -8,7 +8,7 @@ and `ctp2_code/ui/aui_amiga`). No SDL.
 |---|---|---|---|
 | makefile | `Makefile.amiga68k` | `Makefile.warpos` | `Makefile.morphos` |
 | output | `bin/amiga/ctp2.060` | `bin/amiga/ctp2.wos` | `bin/amiga/ctp2.mos` |
-| compiler | Bebbo's `m68k-amigaos-gcc` 6.5 + libnix (`/opt/amiga`) | `ppc-amigaos-gcc` 8.4 + the MOS2WOS SDK (`MGL_DIR`'s `Makefile.wos.gcc.common`) | the MorphOS SDK's `ppc-morphos-gcc` 11.3 + libnix (`/gg`, `MOS_PREFIX`) |
+| compiler | Bebbo's `m68k-amigaos-gcc` 6.5 + libnix (`/opt/amiga`) | `ppc-amigaos-gcc` 8.4 + the MOS2WOS SDK (`warpos/Makefile.wos.gcc.common`) | the MorphOS SDK's `ppc-morphos-gcc` 11.3 + libnix (`/gg`, `MOS_PREFIX`) |
 | conversion | the compiler writes the hunk file | `warpos/elf2warpos` (C, built for the host) | the compiler writes the MorphOS ELF |
 | define | `CTP2_AMIGA_060` | `CTP2_AMIGA_WOS` | `CTP2_AMIGA_MOS` |
 

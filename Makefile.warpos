@@ -3,8 +3,9 @@
 #   make -f Makefile.warpos -j$(nproc)      -> bin/amiga/ctp2.wos
 #
 # Built by ppc-amigaos-gcc 8.4 (adtools) with the MOS2WOS WarpOS SDK overlay,
-# through MiniGL's common file, which holds the toolchain paths and the ET_REL
-# contract (no MiniGL is linked). The link is a relocatable ELF
+# through the common file ctp2_code/os/amiga/warpos/Makefile.wos.gcc.common
+# (taken from MiniGL WOS; no MiniGL is linked), which holds the toolchain
+# paths (WOS_TOOLCHAIN_BIN, MOS2WOS_ROOT) and the ET_REL contract. The link is a relocatable ELF
 # (build/warpos/ctp2.warpelf), which elf2warpos (os/amiga/warpos/elf2warpos,
 # built here with the host's cc) turns into the WarpOS executable. The
 # generated sources and the platform layer are
@@ -18,9 +19,9 @@
 # - the SDK's bits/gthr-default.h declares a 64-byte mutex where its prebuilt
 #   libstdc++.a has 60 bytes: a patched copy (made below) comes first.
 
-MGL_DIR ?= /home/mirek/MiniGL_WOS_V19_mglQ3
+WOS_COMMON ?= ctp2_code/os/amiga/warpos/Makefile.wos.gcc.common
 CPU     ?= 603e
-include $(MGL_DIR)/Makefile.wos.gcc.common
+include $(WOS_COMMON)
 
 # The converter, a host program. Its 68k stub (stub.s) is kept assembled in
 # stub.inc; `make -f Makefile.warpos elf2warpos-stub` remakes that (68k tools).

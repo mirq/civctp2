@@ -1,0 +1,190 @@
+# Builds the Amiga (68060, WarpOS, MorphOS) and Linux executables.
+#
+# Every push and pull request: the executables are uploaded as workflow
+# artifacts (Actions tab -> the run -> Artifacts).
+# A pushed tag v* (git tag v1.2 && git push fork v1.2), or a manual run with
+# "release" set, also packs the release archives (tools/ci/package-release.sh)
+# and publishes them as a GitHub release.
+#
+# The 68k and WarpOS cross compilers come from the amigadev/crosstools images;
+# the generated sources (database records, SLIC/LDL parsers) and the host tool
+# elf2warpos are made on the runner first, since the images point gcc/g++/ld
+# at the cross compiler. MorphOS builds on the runner itself with the MorphOS
+# SDK's Debian package (ppc-morphos-gcc 11.3 in /gg), checksum pinned.
+
+name: Build
+
+on:
+  push:
+    branches: [ '**' ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish a release with this tag name (e.g. v0.9-amiga); empty = build only'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  # The toolchain images; replace them to build with other compiler versions.
+  IMAGE_68K: amigadev/crosstools:m68k-amigaos     # Bebbo gcc 6.5.0b + libnix
+  IMAGE_WOS: amigadev/crosstools:ppc-amigaos      # adtools ppc-amigaos-gcc 11.5
+  MOS_SDK_URL: https://bigfoot.morphos-team.net/test/morphos-sdk_20230510-1_amd64.deb
+  MOS_SDK_SHA256: 2e5e687a0ba1cb62a554110d97ccd4f1986ae2262e1212acfb02eda7fab2093a
+  MOS2WOS_URL: https://aminet.net/dev/gcc/gcc-mos2wos.lha
+
+jobs:
+  amiga:
+    name: Amiga ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: 68k
+            makefile: Makefile.amiga68k
+            exe: bin/amiga/ctp2.060
+            debug: build/amiga68k/ctp2.debug
+          - target: warpos
+            makefile: Makefile.warpos
+            exe: bin/amiga/ctp2.wos
+            debug: build/warpos/ctp2.debug.elf
+          - target: morphos
+            makefile: Makefile.morphos
+            exe: bin/amiga/ctp2.mos
+            debug: build/morphos/ctp2.debug
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq byacc flex lhasa
+
+      - name: Generated sources (host)
+        run: make -f ${{ matrix.makefile }} YACC=byacc -j$(nproc) gen
+
+      - name: MOS2WOS SDK and elf2warpos (host)
+        if: matrix.target == 'warpos'
+        run: |
+          mkdir -p build/mos2wos && cd build/mos2wos
+          curl -fsSL --retry 3 -o gcc-mos2wos.lha "$MOS2WOS_URL"
+          lhasa xq gcc-mos2wos.lha
+          tar xf gcc-mos2wos.tar
+          test -f gg/ppc-warpos/lib/startupwos.o
+          cd ../..
+          make -f Makefile.warpos MOS2WOS_ROOT=$PWD/build/mos2wos/gg build/host/elf2warpos
+
+      - name: MorphOS SDK
+        if: matrix.target == 'morphos'
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/morphos-sdk.deb" "$MOS_SDK_URL"
+          echo "$MOS_SDK_SHA256  $RUNNER_TEMP/morphos-sdk.deb" | sha256sum -c -
+          sudo apt-get install -y -qq "$RUNNER_TEMP/morphos-sdk.deb"
+          /gg/bin/ppc-morphos-gcc --version | head -1
+
+      - name: Cross build (MorphOS, on the runner)
+        if: matrix.target == 'morphos'
+        run: |
+          make -f ${{ matrix.makefile }} YACC=false -j$(nproc)
+          ls -la ${{ matrix.exe }}
+
+      - name: Cross build (in the toolchain image)
+        if: matrix.target != 'morphos'
+        run: |
+          case "${{ matrix.target }}" in
+          68k)     image=$IMAGE_68K; args="PREFIX=/opt/m68k-amigaos" ;;
+          warpos)  image=$IMAGE_WOS; args="WOS_TOOLCHAIN_BIN=/opt/ppc-amigaos/bin MOS2WOS_ROOT=/src/build/mos2wos/gg HOSTCC=false" ;;
+          esac
+          docker run --rm -v "$PWD:/src" -w /src "$image" \
+            make -f ${{ matrix.makefile }} $args YACC=false -j$(nproc)
+          sudo chown -R "$(id -u):$(id -g)" build bin
+          ls -la ${{ matrix.exe }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amiga-${{ matrix.target }}
+          path: |
+            ${{ matrix.exe }}
+            ${{ matrix.debug }}
+          if-no-files-found: error
+
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libsdl2-dev libsdl2-mixer-dev libsdl2-image-dev \
+            libtiff-dev byacc flex binutils-gold automake autoconf libtool unzip
+
+      - name: Build
+        run: |
+          ./autogen.sh
+          CFLAGS="-O2 -w -Wno-implicit-function-declaration -fuse-ld=gold" \
+          CXXFLAGS="-O2 -w -fpermissive -fuse-ld=gold" \
+            ./configure --enable-silent-rules
+          # A parallel make can miss generated sources (it can take two or
+          # three passes); a serial one last.
+          make -j$(nproc) || make -j$(nproc) || make -j$(nproc) || make
+          ls -la ctp2_code/ctp/ctp2 ctp2_code/mapgen/.libs/*.so
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: |
+            ctp2_code/ctp/ctp2
+            ctp2_code/mapgen/.libs/*.so
+          if-no-files-found: error
+          include-hidden-files: true
+
+  release:
+    name: Release
+    needs: [ amiga, linux ]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: LHa for UNIX
+        run: |
+          git clone --depth 1 https://github.com/jca02266/lha.git "$RUNNER_TEMP/lha"
+          cd "$RUNNER_TEMP/lha"
+          autoreconf -is && ./configure -q && make -s -j$(nproc)
+          sudo install src/lha /usr/local/bin/lha
+          lha --version
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package
+        run: |
+          tag="${{ inputs.release }}"
+          [ -n "$tag" ] || tag="${GITHUB_REF_NAME}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          tools/ci/package-release.sh amiga "$tag" dist \
+            artifacts/amiga-68k/bin/amiga/ctp2.060 \
+            artifacts/amiga-warpos/bin/amiga/ctp2.wos \
+            artifacts/amiga-morphos/bin/amiga/ctp2.mos
+          tools/ci/package-release.sh linux "$tag" dist \
+            artifacts/linux-x86_64/ctp/ctp2 \
+            artifacts/linux-x86_64/mapgen/.libs/*.so
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi
