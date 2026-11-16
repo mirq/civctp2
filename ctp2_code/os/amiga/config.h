@@ -23,7 +23,10 @@
 #define HAVE_SYS_STAT_H 1
 #define HAVE_SYS_TYPES_H 1
 
+/* The 68k and the PowerPC are big-endian; AROS on x86 is not. */
+#if !defined(__BYTE_ORDER__) || (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 #define WORDS_BIGENDIAN 1
+#endif
 
 /* No COM: the map generators and the other "COM" objects are plain C++. */
 #define USE_COM_REPLACEMENT 1

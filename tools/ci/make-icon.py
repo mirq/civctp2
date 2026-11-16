@@ -3,6 +3,8 @@
 
     tools/ci/make-icon.py <out.info>            the launcher (a tool icon)
     tools/ci/make-icon.py --drawer <out.info>   the CTP2 drawer
+    tools/ci/make-icon.py --stack N <out.info>  a tool icon asking for N bytes
+                                                of stack (the AROS program)
 
 An OS 2/3 icon: struct DiskObject, for a drawer its DrawerData (with the OS 2
 extension), two planar 4-colour images (normal and selected), no tool types.
@@ -87,6 +89,11 @@ def main():
     args = sys.argv[1:]
     drawer = "--drawer" in args
     args = [a for a in args if a != "--drawer"]
+    stack = 65536
+    if "--stack" in args:
+        i = args.index("--stack")
+        stack = int(args[i + 1])
+        del args[i:i + 2]
     out = args[0]
     gadget = struct.pack(
         ">IhhhhHHHIIIIIHI",
@@ -106,7 +113,7 @@ def main():
         0, 0,                       # DefaultTool, ToolTypes
         -0x80000000, -0x80000000,   # NO_ICON_POSITION
         1 if drawer else 0, 0,      # DrawerData, ToolWindow
-        0 if drawer else 65536,     # StackSize
+        0 if drawer else stack,     # StackSize
     )
     assert len(diskobj) == 78, len(diskobj)
     with open(out, "wb") as f:

@@ -1,4 +1,4 @@
-Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS, MorphOS), plus a Linux x86_64 build.
+Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS), MorphOS and AROS x86_64, plus a Linux x86_64 build.
 
 ## Which file do I need?
 
@@ -7,8 +7,13 @@ Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS, MorphOS), plus a
 | **CTP2-Amiga-@VERSION@.lha** | **Start here.** The `CTP2` drawer: the launcher, the three Amiga programs, the Apolyton data files, the README files |
 | CTP2-Amiga-@VERSION@-programs-only.lha | Only the launcher and the programs, to update a copy you already installed |
 | CTP2-MorphOS-@VERSION@.lha | The same drawer for MorphOS only: the launcher and `ctp2.mos` |
+| CTP2-AROS-x86_64-@VERSION@.lha | The drawer for AROS x86_64 (ABIv11, e.g. AROS One x86_64): `ctp2.aros`, no launcher |
 | CTP2-Linux-x86_64-@VERSION@.tar.gz | Linux (SDL2) build |
 | SHA256SUMS.txt | Checksums |
+
+## New in 0.3
+
+- **AROS x86_64** (ABIv11): a native build, `ctp2.aros`, with its own package (tested in Linux-hosted AROS 2026.09: menu, new game, turns, quit). It takes a 16-bit screen when the display has one, else a 32-bit one; sound through AHI. Start it from `CTP2/ctp2_code/ctp` (double-click `ctp2.aros`, or from a Shell); settings are the ENV: variables in `README-Amiga.md`.
 
 ## New in 0.2
 
@@ -32,7 +37,7 @@ You don't need `ctp2_program`, the music or the videos.
 
 ## Installing
 
-1. Unpack `CTP2-Amiga-@VERSION@.lha` (on MorphOS `CTP2-MorphOS-@VERSION@.lha` is enough). It makes the drawer `CTP2`.
+1. Unpack `CTP2-Amiga-@VERSION@.lha` (on MorphOS `CTP2-MorphOS-@VERSION@.lha` is enough, on AROS `CTP2-AROS-x86_64-@VERSION@.lha`). It makes the drawer `CTP2`.
 2. Copy the original `ctp2_data` and `Scenarios` into `CTP2`, merging them with the folders already there.
 3. Unpack the archive over them again, so the updated Apolyton files replace the original ones.
 4. Check that these exist: `CTP2/ctp2_data/default/graphics/sprites/GU003.SPR` and `CTP2/ctp2_data/default/sound/sound.zfs`.
@@ -49,5 +54,9 @@ Open the `CTP2` drawer and double-click **CTP2** (the launcher). In the launcher
 - Language, sound rate, save compression and memory settings.
 
 Press **Play**. Settings are kept for the next time. CTRL-C in a Shell, or Quit in the game, ends it.
+
+## Playing on AROS
+
+Open `CTP2/ctp2_code/ctp` and double-click **ctp2.aros**, or from a Shell: `cd CTP2/ctp2_code/ctp` and `ctp2.aros`. The game's resolution is set in `userprofile.txt` (`ScreenResWidth`, `ScreenResHeight`, 1024×768 by default); `setenv CTP2_MODE <id>` picks a screen mode. Needs AROS x86_64 ABIv11 with a 16 or 32-bit screen mode at least that big; AHI for sound (optional).
 
 Needs: a 68060 with FPU, a WarpOS PowerPC card or MorphOS; AmigaOS 3.x with an RTG card (Picasso96 or CyberGraphX); 128 MB of fast RAM; AHI for sound (optional). There's more in `README-Amiga.md` inside the archive.

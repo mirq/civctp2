@@ -1,4 +1,5 @@
-# Builds the Amiga (68060, WarpOS, MorphOS, the launcher) and Linux programs.
+# Builds the Amiga (68060, WarpOS, MorphOS, the launcher), AROS x86_64 and
+# Linux programs.
 #
 # Every push and pull request: the programs are uploaded as workflow
 # artifacts (Actions tab -> the run -> Artifacts).
@@ -9,6 +10,7 @@
 #   CTP2-Amiga-<version>.lha                everything but the original data
 #   CTP2-Amiga-<version>-programs-only.lha  to update an installed copy
 #   CTP2-MorphOS-<version>.lha              the launcher and ctp2.mos only
+#   CTP2-AROS-x86_64-<version>.lha          ctp2.aros (AROS x86_64 ABIv11)
 #   CTP2-Linux-x86_64-<version>.tar.gz
 #
 # The 68k and WarpOS cross compilers come from the amigadev/crosstools images;
@@ -16,6 +18,9 @@
 # elf2warpos are made on the runner first, since the images point gcc/g++/ld
 # at the cross compiler. MorphOS builds on the runner itself with the MorphOS
 # SDK's Debian package (ppc-morphos-gcc 11.3 in /gg), checksum pinned.
+# AROS builds on the runner with deadwood2's cross toolchain, made from the
+# AROS sources of AROS_TAG (about 30 minutes, then cached), against the
+# Development drawer of the same release's Linux-hosted system.
 
 name: Build and release
 
@@ -44,6 +49,9 @@ env:
   MOS_SDK_URL: https://bigfoot.morphos-team.net/test/morphos-sdk_20230510-1_amd64.deb
   MOS_SDK_SHA256: 2e5e687a0ba1cb62a554110d97ccd4f1986ae2262e1212acfb02eda7fab2093a
   MOS2WOS_URL: https://aminet.net/dev/gcc/gcc-mos2wos.lha
+  AROS_TAG: ABIv11_2026.09
+  AROS_SYSTEM_URL: https://github.com/deadwood2/AROS/releases/download/ABIv11_2026.09/AROS-202609-linux-x86_64-system.tar.gz
+  AROS_SYSTEM_SHA256: 85e1a46dd07aaa2402a69143e56ebbd89b37d4cf599e6e58579d718b1525b6bb
 
 jobs:
   amiga:
@@ -78,6 +86,14 @@ jobs:
             files: |
               bin/amiga/ctp2.mos
               build/morphos/ctp2.debug
+          - target: aros
+            title: AROS x86_64
+            artifact: aros-x86_64
+            makefile: Makefile.aros
+            exe: bin/amiga/ctp2.aros
+            files: |
+              bin/amiga/ctp2.aros
+              build/aros-x86_64/ctp2.debug
     steps:
       - uses: actions/checkout@v4
 
@@ -112,8 +128,47 @@ jobs:
           make -f ${{ matrix.makefile }} YACC=false -j$(nproc)
           ls -la ${{ matrix.exe }}
 
+      - name: AROS toolchain (cache)
+        if: matrix.target == 'aros'
+        id: aros-toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/arosbuilds/toolchain-core-x86_64
+          key: aros-toolchain-${{ env.AROS_TAG }}-ubuntu-24.04-1
+
+      - name: AROS toolchain (build, when not cached)
+        if: matrix.target == 'aros' && steps.aros-toolchain.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y -qq gawk bison flex bzip2 netpbm autoconf automake \
+            libx11-dev libxext-dev liblzo2-dev libxxf86vm-dev libpng-dev gcc-multilib \
+            libsdl1.2-dev python3-mako libxcursor-dev cmake genisoimage yasm nasm xorriso mtools \
+            xz-utils texinfo
+          mkdir -p ~/arosbuilds && cd ~/arosbuilds
+          git clone -q --depth 1 --branch "$AROS_TAG" https://github.com/deadwood2/AROS.git AROS
+          cp AROS/scripts/rebuild.sh .
+          echo 1 | MAKE_JOBS=$(nproc) ./rebuild.sh > rebuild.log 2>&1 || { tail -100 rebuild.log; exit 1; }
+          rm -rf AROS portssources
+          toolchain-core-x86_64/x86_64-aros-gcc --version | head -1
+
+      - name: AROS headers and libraries
+        if: matrix.target == 'aros'
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/aros.tar.gz" "$AROS_SYSTEM_URL"
+          echo "$AROS_SYSTEM_SHA256  $RUNNER_TEMP/aros.tar.gz" | sha256sum -c -
+          mkdir -p ~/arosbuilds/system
+          tar xzf "$RUNNER_TEMP/aros.tar.gz" -C ~/arosbuilds/system --strip-components=1 \
+            AROS-202609-linux-x86_64-system/Development
+
+      - name: Cross build (AROS, on the runner)
+        if: matrix.target == 'aros'
+        run: |
+          make -f ${{ matrix.makefile }} YACC=false -j$(nproc) \
+            AROS_TOOLCHAIN=$HOME/arosbuilds/toolchain-core-x86_64 \
+            AROS_SYSROOT=$HOME/arosbuilds/system/Development
+          ls -la ${{ matrix.exe }}
+
       - name: Cross build (in the toolchain image)
-        if: matrix.target != 'morphos'
+        if: matrix.target == '68k' || matrix.target == 'warpos'
         run: |
           case "${{ matrix.target }}" in
           68k)     image=$IMAGE_68K; args="PREFIX=/opt/m68k-amigaos" ;;
@@ -196,6 +251,8 @@ jobs:
             artifacts/amiga-68060/bin/amiga/CTP2 \
             artifacts/amiga-warpos/bin/amiga/ctp2.wos \
             artifacts/amiga-morphos/bin/amiga/ctp2.mos
+          tools/ci/package-release.sh aros "$version" dist \
+            artifacts/aros-x86_64/bin/amiga/ctp2.aros
           tools/ci/package-release.sh linux "$version" dist \
             artifacts/linux-x86_64/ctp/ctp2 \
             artifacts/linux-x86_64/mapgen/.libs/*.so
@@ -206,7 +263,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          title="Call to Power II for Amiga $VERSION"
+          title="Call to Power II for Amiga and AROS $VERSION"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
             gh release edit "$TAG" --title "$title" --notes-file "$RUNNER_TEMP/notes.md"

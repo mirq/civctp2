@@ -1,19 +1,20 @@
-# Call to Power II on AmigaOS: 68060, WarpOS and MorphOS
+# Call to Power II on AmigaOS: 68060, WarpOS, MorphOS and AROS
 
-Three native builds, two for an Amiga with an RTG card (Picasso96 or
-CyberGraphX) and one for MorphOS, sharing one platform layer (this directory
-and `ctp2_code/ui/aui_amiga`). No SDL.
+Four native builds, two for an Amiga with an RTG card (Picasso96 or
+CyberGraphX), one for MorphOS and one for AROS x86_64, sharing one platform
+layer (this directory and `ctp2_code/ui/aui_amiga`). No SDL.
 
-| | 68060 | WarpOS (PowerPC) | MorphOS (PowerPC) |
-|---|---|---|---|
-| makefile | `Makefile.amiga68k` | `Makefile.warpos` | `Makefile.morphos` |
-| output | `bin/amiga/ctp2.060` | `bin/amiga/ctp2.wos` | `bin/amiga/ctp2.mos` |
-| compiler | Bebbo's `m68k-amigaos-gcc` 6.5 + libnix (`/opt/amiga`) | `ppc-amigaos-gcc` 8.4 + the MOS2WOS SDK (`warpos/Makefile.wos.gcc.common`) | the MorphOS SDK's `ppc-morphos-gcc` 11.3 + libnix (`/gg`, `MOS_PREFIX`) |
-| conversion | the compiler writes the hunk file | `warpos/elf2warpos` (C, built for the host) | the compiler writes the MorphOS ELF |
-| define | `CTP2_AMIGA_060` | `CTP2_AMIGA_WOS` | `CTP2_AMIGA_MOS` |
+| | 68060 | WarpOS (PowerPC) | MorphOS (PowerPC) | AROS x86_64 (ABIv11) |
+|---|---|---|---|---|
+| makefile | `Makefile.amiga68k` | `Makefile.warpos` | `Makefile.morphos` | `Makefile.aros` |
+| output | `bin/amiga/ctp2.060` | `bin/amiga/ctp2.wos` | `bin/amiga/ctp2.mos` | `bin/amiga/ctp2.aros` |
+| compiler | Bebbo's `m68k-amigaos-gcc` 6.5 + libnix (`/opt/amiga`) | `ppc-amigaos-gcc` 8.4 + the MOS2WOS SDK (`warpos/Makefile.wos.gcc.common`) | the MorphOS SDK's `ppc-morphos-gcc` 11.3 + libnix (`/gg`, `MOS_PREFIX`) | deadwood2's `x86_64-aros-gcc` (`toolchain-core-x86_64`, `AROS_TOOLCHAIN`) + the `Development` drawer of an ABIv11 system (`AROS_SYSROOT`) |
+| conversion | the compiler writes the hunk file | `warpos/elf2warpos` (C, built for the host) | the compiler writes the MorphOS ELF | the compiler writes the relocatable ELF |
+| define | `CTP2_AMIGA_060` | `CTP2_AMIGA_WOS` | `CTP2_AMIGA_MOS` | `CTP2_AMIGA_AROS` |
 
-All define `CTP2_AMIGA_BUILD` and `WORDS_BIGENDIAN`, and select the Amiga UI
-backend with `__AUI_USE_AMIGA__` (`ui/aui_common/auicfg.h`).
+All define `CTP2_AMIGA_BUILD` and select the Amiga UI backend with
+`__AUI_USE_AMIGA__` (`ui/aui_common/auicfg.h`). `WORDS_BIGENDIAN` follows the
+CPU (`config.h`): all but AROS are big-endian.
 
 ## Building
 
@@ -28,10 +29,11 @@ Then:
     make -f Makefile.amiga68k -j$(nproc)
     make -f Makefile.warpos  -j$(nproc)
     make -f Makefile.morphos -j$(nproc)    # CPU=7450 for a G4-only build (default 750)
+    make -f Makefile.aros    -j$(nproc)    # AROS_TOOLCHAIN=..., AROS_SYSROOT=... (see AROS below)
 
 The full links with symbols stay in `build/amiga68k/ctp2.debug`,
-`build/warpos/ctp2.debug.elf` and `build/morphos/ctp2.debug`, for `addr2line`
-against a crash address.
+`build/warpos/ctp2.debug.elf`, `build/morphos/ctp2.debug` and
+`build/aros-x86_64/ctp2.debug`, for `addr2line` against a crash address.
 
 ## Launcher
 
@@ -153,6 +155,62 @@ The same code as the Amiga builds, compiled natively for MorphOS's PowerPC;
 - `LocaleBase` and `TimerBase` are `struct Library *` in the SDK's protos.
 - The OS structures get the 68k layout from the SDK compiler itself
   (`struct Message` is 20 bytes); the `pack(2)` around the headers is harmless.
+
+## AROS
+
+`Makefile.aros` builds for AROS x86_64 ABIv11 (deadwood2/AROS, the 64-bit
+line AROS One x86_64 is built on). The compiler is deadwood2's cross
+toolchain, made once (about half an hour) with their script:
+
+    git clone --branch ABIv11_2026.09 https://github.com/deadwood2/AROS.git AROS
+    cp AROS/scripts/rebuild.sh . && echo 1 | ./rebuild.sh     # toolchain-core-x86_64
+
+and the headers and libraries are the `Development` drawer of an ABIv11
+system, for example the Linux-hosted release
+(`AROS-202609-linux-x86_64-system.tar.gz`):
+
+    make -f Makefile.aros AROS_TOOLCHAIN=<dir>/toolchain-core-x86_64 \
+        AROS_SYSROOT=<system>/Development -j$(nproc)
+
+(The `amigadev/crosstools:x86_64-aros` image is of the other x86_64 line,
+whose startup code fails on ABIv11 in `OpenResource` before `main`.)
+
+`CTP2_AMIGA_AROS` covers what differs:
+
+- Little-endian and 64-bit: `WORDS_BIGENDIAN` is off, so the game's files are
+  read as they are; a pointer in a tag (`ti_Data`, `LBMI_BASEADDRESS`) is an
+  `IPTR` (`amiga_iptr`); the OS headers keep their natural alignment (no
+  `pack(2)`).
+- The card's 16-bit "PC" byte order is the CPU's own: `host_pixfmt` in
+  `amiga_video.c` turns the screen's format round, so the copies (written for
+  a big-endian CPU) stay as they are.
+- 32-bit screens: AROS's displays often have no 15/16-bit modes (the hosted
+  X11 one, several native drivers). When there is no 16-bit mode, a 32-bit
+  one is taken and each pixel goes out through a 64K-entry table; the game
+  still draws R5G6B5.
+- Its libstdc++ is built with threads: `<pthread.h>` brings in exec's types,
+  lists and ports, whose `BYTE`, `WORD`, `BOOL`, `Message` and list macros
+  clash with the game's. `amiga_prelude.h` includes it first with those names
+  renamed.
+- No libnix stack cookie: `main` moves to a 2 MB stack of its own
+  (`NewStackSwap`) when it was given less.
+- The AHI channel-info hook is a native function (`AROS_UFH3`). Sound
+  defaults to 44100 Hz.
+- The C++ static destructors are skipped at exit, as on the 68060 and
+  WarpOS (with them the program never got back to the Shell): their entries
+  in the startup's `DTORS` set become empty functions. `ENV:CTP2_DTORS` runs
+  them.
+- An AROS program is a relocatable ELF linked with `ld -r`, which keeps every
+  C++ COMDAT group as sections of its own (41,000); `--force-group-allocation`
+  merges them.
+
+Run it from its drawer (`ctp2_code/ctp/ctp2.aros`, double-click or Shell);
+there is no launcher (the 68k one does not run on x86). Settings are the
+ENV: variables above.
+
+Tested in Linux-hosted AROS ABIv11 2026.09 (X11, 32-bit screen, where
+`LockBitMap` fails and the copy goes through `WritePixelArray`): menu, new
+game, turns, quit back to the Shell.
 
 ## Not done yet
 

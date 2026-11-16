@@ -2,16 +2,17 @@
 
 ## Targets
 
-| | 68060 | WarpOS (PowerPC) | MorphOS (PowerPC) |
-|---|---|---|---|
-| makefile | `Makefile.amiga68k` | `Makefile.warpos` | `Makefile.morphos` |
-| output | `bin/amiga/ctp2.060` | `bin/amiga/ctp2.wos` | `bin/amiga/ctp2.mos` |
-| compiler | Bebbo `m68k-amigaos-gcc` 6.5 + libnix (`/opt/amiga`) | `ppc-amigaos-gcc` 8.4 + MOS2WOS SDK | `ppc-morphos-gcc` 11.3 + libnix (`/gg`) |
-| executable format | hunk file, written by the compiler | ELF converted by `ctp2_code/os/amiga/warpos/elf2warpos` (a host tool) | MorphOS ELF |
-| define | `CTP2_AMIGA_060` | `CTP2_AMIGA_WOS` | `CTP2_AMIGA_MOS` |
+| | 68060 | WarpOS (PowerPC) | MorphOS (PowerPC) | AROS x86_64 (ABIv11) |
+|---|---|---|---|---|
+| makefile | `Makefile.amiga68k` | `Makefile.warpos` | `Makefile.morphos` | `Makefile.aros` |
+| output | `bin/amiga/ctp2.060` | `bin/amiga/ctp2.wos` | `bin/amiga/ctp2.mos` | `bin/amiga/ctp2.aros` |
+| compiler | Bebbo `m68k-amigaos-gcc` 6.5 + libnix (`/opt/amiga`) | `ppc-amigaos-gcc` 8.4 + MOS2WOS SDK | `ppc-morphos-gcc` 11.3 + libnix (`/gg`) | deadwood2 `x86_64-aros-gcc` + an ABIv11 `Development` drawer |
+| executable format | hunk file, written by the compiler | ELF converted by `ctp2_code/os/amiga/warpos/elf2warpos` (a host tool) | MorphOS ELF | relocatable ELF (`ld -r`) |
+| define | `CTP2_AMIGA_060` | `CTP2_AMIGA_WOS` | `CTP2_AMIGA_MOS` | `CTP2_AMIGA_AROS` |
 
-All three define `CTP2_AMIGA_BUILD` and `WORDS_BIGENDIAN`, and select the
-Amiga UI backend with `__AUI_USE_AMIGA__` (`ui/aui_common/auicfg.h`).
+All four define `CTP2_AMIGA_BUILD` and select the Amiga UI backend with
+`__AUI_USE_AMIGA__` (`ui/aui_common/auicfg.h`). `WORDS_BIGENDIAN`
+(`os/amiga/config.h`) follows the CPU: set on all but AROS.
 `CTP2_PORTABLE_BUILD` (`os/include/ctp2_config.h`) means "not the original
 Windows build". Use it, not `USE_SDL`, to guard CD, MCI, Miles and GDI code.
 
@@ -30,10 +31,15 @@ the SLIC grammars.
 make -f Makefile.amiga68k -j$(nproc)
 make -f Makefile.warpos  -j$(nproc)
 make -f Makefile.morphos -j$(nproc)    # CPU=7450 for a G4-only build
+make -f Makefile.aros AROS_TOOLCHAIN=... AROS_SYSROOT=... -j$(nproc)
 ```
 
+The AROS toolchain and sysroot are described in `ctp2_code/os/amiga/README.md`
+("AROS").
+
 The full links with symbols stay in `build/amiga68k/ctp2.debug`,
-`build/warpos/ctp2.debug.elf` and `build/morphos/ctp2.debug`. Use them for
+`build/warpos/ctp2.debug.elf`, `build/morphos/ctp2.debug` and
+`build/aros-x86_64/ctp2.debug`. Use them for
 `addr2line`/`nm` on crash addresses and on the caller offsets the perf log
 prints.
 
@@ -173,6 +179,19 @@ make -f Makefile.amiga68k -j$(nproc) PREFIX=<gcc16 prefix> \
   sets their include guards.
 - The AHI hook is PowerPC code behind an `EmulLibEntry` (`TRAP_LIB`) gate.
 - The SDK compiler gives OS structures the 68k layout itself.
+
+## AROS specifics
+
+- x86_64: little-endian, 64-bit pointers. Tag values that carry pointers are
+  `amiga_iptr` (`IPTR` on AROS); the OS headers keep natural alignment.
+- The 16-bit copy code assumes a big-endian CPU; `host_pixfmt` swaps the
+  meaning of the "PC" pixel formats instead of touching the copies.
+- 32-bit screens are used when there is no 16-bit mode (a 64K-entry table
+  widens R5G6B5).
+- libstdc++'s `<pthread.h>` pulls in exec headers; `amiga_prelude.h`
+  includes it first with the clashing names renamed.
+- `main` swaps to a 2 MB stack (`NewStackSwap`); the AHI hook is native;
+  the C++ static destructors are skipped at exit (`ENV:CTP2_DTORS` runs them).
 
 ## Not done yet
 

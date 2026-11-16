@@ -1981,7 +1981,18 @@ void main_InitializeLogs(void)
 
 #if defined(__GNUC__)
 
+#if defined(CTP2_AMIGA_AROS)
+static int ctp2_main(int argc, char **argv);
+
 int main(int argc, char **argv)
+{
+	return amiga_run_with_stack(ctp2_main, argc, argv);
+}
+
+static int ctp2_main(int argc, char **argv)
+#else
+int main(int argc, char **argv)
+#endif
 {
 #if defined(CTP2_AMIGA_BUILD)
 	// Libraries, PROGDIR: as the current directory, the log.

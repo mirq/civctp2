@@ -22,7 +22,96 @@ struct Library       *LocaleBase;
 struct LocaleBase    *LocaleBase;
 #endif
 
-#if !defined(CTP2_AMIGA_WOS)
+#if defined(CTP2_AMIGA_AROS)
+/* AROS's startup has no stack cookie: main() moves to a stack of its own
+ * with NewStackSwap when the Shell's (or the icon's) is smaller than 2 MB.
+ * It comes from malloc, which the C library gives back when the program has
+ * ended, by then on its own stack again. An exit() from inside the game
+ * leaves through the startup's longjmp, without NewStackSwap's return: the
+ * task's stack bounds are put back from the atexit list, the last entry to
+ * run. */
+#define AROS_GAME_STACK (2048UL * 1024UL)
+
+static APTR s_oldSPLower, s_oldSPUpper;
+static int  s_stackSwapped;
+
+static void restore_stack_bounds(void)
+{
+	if (s_stackSwapped)
+	{
+		struct Task * const self = FindTask(NULL);
+		self->tc_SPLower = s_oldSPLower;
+		self->tc_SPUpper = s_oldSPUpper;
+		s_stackSwapped = 0;
+	}
+}
+
+/* The game's C++ static destructors are not run, as on the 68060 and WarpOS
+ * (below): they only give back memory, which the C library frees whole at
+ * exit, and the program never got back to the Shell after the last atexit
+ * function (hosted AROS 2026.09). AROS's startup calls them from the DTORS
+ * symbol set ([0] the count, then the functions) after the atexit list: each
+ * entry becomes an empty function. ENV:CTP2_DTORS runs them instead. */
+extern const void *__DTORS_LIST__[];
+
+static void no_destructor_aros(void)
+{
+}
+
+static void skip_destructors(void)
+{
+	const void ** const list = (const void **)__DTORS_LIST__;
+	long i, n;
+
+	if (amiga_env_flag("CTP2_DTORS")) return;
+	n = (long)(IPTR)list[0];
+	for (i = 1; i <= n && list[i]; ++i) list[i] = (const void *)no_destructor_aros;
+}
+
+static IPTR stack_trampoline(IPTR body, IPTR argc, IPTR argv)
+{
+	atexit(restore_stack_bounds);
+	return (IPTR)((int (*)(int, char **))body)((int)argc, (char **)argv);
+}
+
+int amiga_run_with_stack(int (*body)(int, char **), int argc, char **argv)
+{
+	struct Task * const   self = FindTask(NULL);
+	struct StackSwapStruct sss;
+	struct StackSwapArgs   args;
+	uint8_t *             stack;
+	int                   r;
+
+	/* First in the atexit list: runs last, after the game's own. */
+	atexit(skip_destructors);
+
+	if ((IPTR)self->tc_SPUpper - (IPTR)self->tc_SPLower >= AROS_GAME_STACK)
+		return body(argc, argv);
+
+	stack = (uint8_t *)malloc(AROS_GAME_STACK);
+	if (!stack)
+	{
+		fprintf(stderr, "Call to Power II: no memory for a 2 MB stack (use \"stack 2000000\").\n");
+		return 20;
+	}
+
+	s_oldSPLower    = self->tc_SPLower;
+	s_oldSPUpper    = self->tc_SPUpper;
+	s_stackSwapped  = 1;
+	sss.stk_Lower   = stack;
+	sss.stk_Upper   = stack + AROS_GAME_STACK;
+	sss.stk_Pointer = stack + AROS_GAME_STACK;
+	args.Args[0]    = (IPTR)body;
+	args.Args[1]    = (IPTR)argc;
+	args.Args[2]    = (IPTR)argv;
+	r = (int)NewStackSwap(&sss, (APTR)stack_trampoline, &args);
+	s_stackSwapped  = 0;
+	free(stack);
+	return r;
+}
+#endif
+
+#if !defined(CTP2_AMIGA_WOS) && !defined(CTP2_AMIGA_AROS)
 /* libnix's stack cookie: when the Shell's stack is smaller, the startup
  * (swapstack.o, pulled in by Makefile.amiga68k) allocates one this big with
  * AllocVec, switches to it with StackSwap before main() and frees it at exit:
@@ -104,6 +193,8 @@ int amiga_platform_init(void)
 	          "WarpOS"
 #elif defined(CTP2_AMIGA_MOS)
 	          "MorphOS"
+#elif defined(CTP2_AMIGA_AROS)
+	          "AROS x86_64"
 #else
 	          "68060"
 #endif

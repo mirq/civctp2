@@ -78,29 +78,136 @@ static int uaegfx_card(void)
 struct Window *amiga_video_window(void) { return s_window; }
 void amiga_video_offset(int *x, int *y) { *x = s_ox; *y = s_oy; }
 
-static int pixfmt_ok(ULONG fmt)
+/* The copies below were written for a big-endian CPU, where a uint16_t
+ * stored as it is lands in the card's memory as PIXFMT_RGB16, and the "PC"
+ * formats are the swapped ones. On a little-endian CPU (AROS x86) it is the
+ * other way round: the screen's format is turned into what it is relative to
+ * the CPU, so that s_pixfmt's "PC" still means "swap the bytes". */
+static ULONG host_pixfmt(ULONG fmt)
+{
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+	switch (fmt)
+	{
+	case PIXFMT_RGB16:   return PIXFMT_RGB16PC;
+	case PIXFMT_RGB16PC: return PIXFMT_RGB16;
+	case PIXFMT_BGR16:   return PIXFMT_BGR16PC;
+	case PIXFMT_BGR16PC: return PIXFMT_BGR16;
+	case PIXFMT_RGB15:   return PIXFMT_RGB15PC;
+	case PIXFMT_RGB15PC: return PIXFMT_RGB15;
+	default:             return fmt;
+	}
+#else
+	return fmt;
+#endif
+}
+
+/* AROS on x86: many displays have no 15/16-bit modes at all (the hosted
+ * X11 one, several native drivers), so 32-bit modes are taken too when there
+ * is no 16-bit one. The game still draws R5G6B5; the copy widens each pixel
+ * through a table (s_lut32) in the card's byte order. */
+#if defined(CTP2_AMIGA_AROS)
+#define AMIGA_VIDEO_32 1
+#else
+#define AMIGA_VIDEO_32 0
+#endif
+
+static int             s_bpp = 2;          /* bytes a pixel on the card */
+#if AMIGA_VIDEO_32
+static uint32_t *      s_lut32;            /* R5G6B5 -> the card's 32-bit pixel */
+
+/* Where red, green and blue sit in a 32-bit pixel's four bytes. */
+static int pixfmt32_bytes(ULONG fmt, int *r, int *g, int *b)
+{
+	switch (fmt)
+	{
+	case PIXFMT_ARGB32: *r = 1; *g = 2; *b = 3; return 1;
+	case PIXFMT_BGRA32: *r = 2; *g = 1; *b = 0; return 1;
+	case PIXFMT_RGBA32: *r = 0; *g = 1; *b = 2; return 1;
+#if defined(PIXFMT_0RGB32)
+	case PIXFMT_ABGR32: *r = 3; *g = 2; *b = 1; return 1;
+	case PIXFMT_0RGB32: *r = 1; *g = 2; *b = 3; return 1;
+	case PIXFMT_BGR032: *r = 2; *g = 1; *b = 0; return 1;
+	case PIXFMT_RGB032: *r = 0; *g = 1; *b = 2; return 1;
+	case PIXFMT_0BGR32: *r = 3; *g = 2; *b = 1; return 1;
+#endif
+	default: return 0;
+	}
+}
+
+static int make_lut32(ULONG fmt)
+{
+	int      ri, gi, bi;
+	uint32_t p;
+
+	if (!pixfmt32_bytes(fmt, &ri, &gi, &bi)) return 0;
+	if (!s_lut32) s_lut32 = (uint32_t *)malloc(65536 * sizeof(uint32_t));
+	if (!s_lut32) return 0;
+	for (p = 0; p < 65536; ++p)
+	{
+		uint8_t px[4] = { 0, 0, 0, 0 };
+		uint32_t const r5 = (p >> 11) & 0x1F, g6 = (p >> 5) & 0x3F, b5 = p & 0x1F;
+		px[ri] = (uint8_t)((r5 << 3) | (r5 >> 2));
+		px[gi] = (uint8_t)((g6 << 2) | (g6 >> 4));
+		px[bi] = (uint8_t)((b5 << 3) | (b5 >> 2));
+		memcpy(&s_lut32[p], px, 4);   /* byte order as the card has it */
+	}
+	return 1;
+}
+
+/* A 32-bit card pixel back to R5G6B5 (the snapshot, the check). */
+static uint16_t card32_to_565(const uint8_t *px)
+{
+	int ri = 0, gi = 1, bi = 2;
+	pixfmt32_bytes(s_pixfmt, &ri, &gi, &bi);
+	return (uint16_t)(((px[ri] >> 3) << 11) | ((px[gi] >> 2) << 5) | (px[bi] >> 3));
+}
+#endif
+
+/* Bytes a pixel of a usable format, 0 for the others. */
+static int pixfmt_bpp(ULONG fmt)
 {
 	switch (fmt)
 	{
 	case PIXFMT_RGB16: case PIXFMT_RGB16PC:
 	case PIXFMT_BGR16: case PIXFMT_BGR16PC:
 	case PIXFMT_RGB15: case PIXFMT_RGB15PC:
-		return 1;
+		return 2;
 	default:
+#if AMIGA_VIDEO_32
+		{
+			int r, g, b;
+			if (pixfmt32_bytes(fmt, &r, &g, &b)) return 4;
+		}
+#endif
 		return 0;
 	}
 }
 
-/* A mode is taken only when all of this holds: BestCModeIDTagList never
- * fails, it hands back a native chipset mode when nothing fits. */
-static int mode_ok(ULONG id, int width, int height)
+static int pixfmt_ok(ULONG fmt)
 {
+	return pixfmt_bpp(fmt) != 0;
+}
+
+/* A mode is taken only when all of this holds: BestCModeIDTagList never
+ * fails, it hands back a native chipset mode when nothing fits. bpp: 2 or 4
+ * for only those, 0 for either. */
+static int mode_ok_bpp(ULONG id, int width, int height, int bpp)
+{
+	int fbpp;
 	if (id == INVALID_ID || !IsCyberModeID(id)) return 0;
-	if (!pixfmt_ok(GetCyberIDAttr(CYBRIDATTR_PIXFMT, id))) return 0;
-	if (GetCyberIDAttr(CYBRIDATTR_BPPIX, id) != 2) return 0;
+	fbpp = pixfmt_bpp(GetCyberIDAttr(CYBRIDATTR_PIXFMT, id));
+	if (!fbpp || (bpp && fbpp != bpp)) return 0;
+	if ((int)GetCyberIDAttr(CYBRIDATTR_BPPIX, id) != fbpp) return 0;
 	return (int)GetCyberIDAttr(CYBRIDATTR_WIDTH, id)  >= width
 	    && (int)GetCyberIDAttr(CYBRIDATTR_HEIGHT, id) >= height;
 }
+
+static int mode_ok(ULONG id, int width, int height)
+{
+	return mode_ok_bpp(id, width, height, 0);
+}
+
+static ULONG choose_mode_bpp(int width, int height, int bpp);
 
 static ULONG choose_mode(int width, int height)
 {
@@ -116,25 +223,41 @@ static ULONG choose_mode(int width, int height)
 		          env, width, height);
 	}
 
+	id = choose_mode_bpp(width, height, 2);
+#if AMIGA_VIDEO_32
+	if (id == INVALID_ID)
+	{
+		id = choose_mode_bpp(width, height, 4);
+		if (id != INVALID_ID) amiga_log("No 16-bit mode: a 32-bit one\n");
+	}
+#endif
+	return id;
+}
+
+/* 2. and 3. for modes of bpp bytes a pixel. */
+static ULONG choose_mode_bpp(int width, int height, int bpp)
+{
+	ULONG id;
+
 	/* 2. CyberGraphX's own choice. */
 	{
 		struct TagItem tags[] =
 		{
-			{ CYBRBIDTG_Depth,         16 },
+			{ CYBRBIDTG_Depth,         bpp == 4 ? 24 : 16 },
 			{ CYBRBIDTG_NominalWidth,  (ULONG)width },
 			{ CYBRBIDTG_NominalHeight, (ULONG)height },
 			{ TAG_DONE,                0 }
 		};
 		id = BestCModeIDTagList(tags);
-		if (mode_ok(id, width, height)) return id;
+		if (mode_ok_bpp(id, width, height, bpp)) return id;
 	}
 
-	/* 3. The smallest 15/16-bit mode that holds the picture. */
+	/* 3. The smallest 15/16-bit (or 24/32-bit) mode that holds the picture. */
 	{
 		struct TagItem tags[] =
 		{
-			{ CYBRMREQ_MinDepth,  15 },
-			{ CYBRMREQ_MaxDepth,  16 },
+			{ CYBRMREQ_MinDepth,  bpp == 4 ? 24 : 15 },
+			{ CYBRMREQ_MaxDepth,  bpp == 4 ? 32 : 16 },
 			{ CYBRMREQ_MinWidth,  (ULONG)width },
 			{ CYBRMREQ_MinHeight, (ULONG)height },
 			{ TAG_DONE,           0 }
@@ -151,7 +274,7 @@ static ULONG choose_mode(int width, int height)
 			     node = (struct CyberModeNode *)node->Node.ln_Succ)
 			{
 				ULONG area = (ULONG)node->Width * node->Height;
-				if (area < bestArea && mode_ok(node->DisplayID, width, height))
+				if (area < bestArea && mode_ok_bpp(node->DisplayID, width, height, bpp))
 				{
 					best     = node->DisplayID;
 					bestArea = area;
@@ -168,7 +291,7 @@ int amiga_video_modes(int *widths, int *heights, int max)
 	struct TagItem tags[] =
 	{
 		{ CYBRMREQ_MinDepth, 15 },
-		{ CYBRMREQ_MaxDepth, 16 },
+		{ CYBRMREQ_MaxDepth, AMIGA_VIDEO_32 ? 32 : 16 },
 		{ TAG_DONE,          0 }
 	};
 	struct List * list;
@@ -216,11 +339,11 @@ int amiga_video_modes(int *widths, int *heights, int max)
 static void clear_card(int sw, int sh)
 {
 	APTR  handle;
-	ULONG base = 0, bpr = 0;
+	amiga_iptr base = 0, bpr = 0;
 	struct TagItem tags[] =
 	{
-		{ LBMI_BASEADDRESS, (ULONG)&base },
-		{ LBMI_BYTESPERROW, (ULONG)&bpr },
+		{ LBMI_BASEADDRESS, (amiga_iptr)&base },
+		{ LBMI_BYTESPERROW, (amiga_iptr)&bpr },
 		{ TAG_DONE,         0 }
 	};
 
@@ -249,7 +372,7 @@ static void clear_card(int sw, int sh)
 	{
 		int y;
 		for (y = 0; y < sh; ++y)
-			memset((uint8_t *)base + (size_t)y * bpr, 0, (size_t)sw * 2);
+			memset((uint8_t *)base + (size_t)y * bpr, 0, (size_t)sw * s_bpp);
 #if defined(CTP2_AMIGA_WOS)
 		if (s_touchFor68k)
 			CopyMem((APTR)base, (APTR)base, (ULONG)((size_t)(sh - 1) * bpr + (size_t)sw * 2));
@@ -290,7 +413,15 @@ int amiga_video_open(int width, int height)
 
 	sw = (int)GetCyberIDAttr(CYBRIDATTR_WIDTH, id);
 	sh = (int)GetCyberIDAttr(CYBRIDATTR_HEIGHT, id);
-	s_pixfmt = GetCyberIDAttr(CYBRIDATTR_PIXFMT, id);
+	s_pixfmt = host_pixfmt(GetCyberIDAttr(CYBRIDATTR_PIXFMT, id));
+	s_bpp    = pixfmt_bpp(s_pixfmt);
+#if AMIGA_VIDEO_32
+	if (s_bpp == 4 && !make_lut32(s_pixfmt))
+	{
+		amiga_log("No memory for the 32-bit pixel table\n");
+		return 0;
+	}
+#endif
 
 	{
 		/* Pen 0 is grey in a new screen's palette: black, for SetRast. */
@@ -300,13 +431,13 @@ int amiga_video_open(int width, int height)
 			{ SA_DisplayID, id },
 			{ SA_Width,     (ULONG)sw },
 			{ SA_Height,    (ULONG)sh },
-			{ SA_Depth,     16 },
+			{ SA_Depth,     s_bpp == 4 ? GetCyberIDAttr(CYBRIDATTR_DEPTH, id) : 16 },
 			{ SA_Quiet,     TRUE },
 			{ SA_ShowTitle, FALSE },
 			{ SA_Draggable, FALSE },
 			{ SA_Type,      CUSTOMSCREEN },
-			{ SA_Title,     (ULONG)"Call to Power II" },
-			{ SA_Colors,    (ULONG)black },
+			{ SA_Title,     (amiga_iptr)"Call to Power II" },
+			{ SA_Colors,    (amiga_iptr)black },
 			{ TAG_DONE,     0 }
 		};
 		open_step("OpenScreen next");
@@ -322,7 +453,7 @@ int amiga_video_open(int width, int height)
 	{
 		struct TagItem tags[] =
 		{
-			{ WA_CustomScreen, (ULONG)s_screen },
+			{ WA_CustomScreen, (amiga_iptr)s_screen },
 			{ WA_Left,         0 },
 			{ WA_Top,          0 },
 			{ WA_Width,        (ULONG)sw },
@@ -446,7 +577,7 @@ int amiga_video_height(void) { return s_height; }
 int amiga_video_dump_card(const char *path)
 {
 	APTR    handle;
-	ULONG   base = 0, bpr = 0;
+	amiga_iptr   base = 0, bpr = 0;
 	FILE *  f;
 	uint8_t * line;
 	int     x, y, ok = 0;
@@ -461,8 +592,8 @@ int amiga_video_dump_card(const char *path)
 	{
 		struct TagItem tags[] =
 		{
-			{ LBMI_BASEADDRESS, (ULONG)&base },
-			{ LBMI_BYTESPERROW, (ULONG)&bpr },
+			{ LBMI_BASEADDRESS, (amiga_iptr)&base },
+			{ LBMI_BYTESPERROW, (amiga_iptr)&bpr },
 			{ TAG_DONE,         0 }
 		};
 		handle = card_lock(tags);
@@ -474,7 +605,13 @@ int amiga_video_dump_card(const char *path)
 			const uint16_t * row = (const uint16_t *)((const uint8_t *)base + (size_t)(s_oy + y) * bpr) + s_ox;
 			for (x = 0; x < s_width; ++x)
 			{
+#if AMIGA_VIDEO_32
+				uint16_t p = (s_bpp == 4)
+				           ? card32_to_565((const uint8_t *)base + (size_t)(s_oy + y) * bpr + (size_t)(s_ox + x) * 4)
+				           : row[x];
+#else
 				uint16_t p = row[x];
+#endif
 				/* Back to R5G6B5 from the card's layouts. */
 				switch (s_pixfmt)
 				{
@@ -494,8 +631,8 @@ int amiga_video_dump_card(const char *path)
 			{
 				struct TagItem tags[] =
 				{
-					{ LBMI_BASEADDRESS, (ULONG)&base },
-					{ LBMI_BYTESPERROW, (ULONG)&bpr },
+					{ LBMI_BASEADDRESS, (amiga_iptr)&base },
+					{ LBMI_BYTESPERROW, (amiga_iptr)&bpr },
 					{ TAG_DONE,         0 }
 				};
 				handle = card_lock(tags);
@@ -599,7 +736,11 @@ static void convert_row(uint8_t *dst, const uint16_t *src, int n)
 		{
 			for (; i + 1 < n; i += 2)
 			{
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+				uint32_t v = ((uint32_t)src[i + 1] << 16) | src[i];
+#else
 				uint32_t v = ((uint32_t)src[i] << 16) | src[i + 1];
+#endif
 				*(uint32_t *)(d + i) = ((v & 0x00FF00FFu) << 8) | ((v >> 8) & 0x00FF00FFu);
 			}
 		}
@@ -645,6 +786,13 @@ static void convert_row(uint8_t *dst, const uint16_t *src, int n)
 		return;
 
 	default:
+#if AMIGA_VIDEO_32
+		if (s_bpp == 4)
+		{
+			uint32_t * d32 = (uint32_t *)dst;
+			for (i = 0; i < n; ++i) d32[i] = s_lut32[src[i]];
+		}
+#endif
 		return;
 	}
 }
@@ -1211,7 +1359,7 @@ static void present_compare(const AmigaSource *source)
 static void present_rects(const AmigaSource *srcs, int nsrc)
 {
 	APTR    handle;
-	ULONG   base = 0, bpr = 0;
+	amiga_iptr   base = 0, bpr = 0;
 	int     r, k, pending = 0;
 	size_t  i;
 
@@ -1261,8 +1409,8 @@ static void present_rects(const AmigaSource *srcs, int nsrc)
 	{
 		struct TagItem tags[] =
 		{
-			{ LBMI_BASEADDRESS, (ULONG)&base },
-			{ LBMI_BYTESPERROW, (ULONG)&bpr },
+			{ LBMI_BASEADDRESS, (amiga_iptr)&base },
+			{ LBMI_BYTESPERROW, (amiga_iptr)&bpr },
 			{ TAG_DONE,         0 }
 		};
 		AMIGA_PERF_BEGIN(t0);
@@ -1279,7 +1427,7 @@ static void present_rects(const AmigaSource *srcs, int nsrc)
 			Run const *         run    = &s_runs[i];
 			AmigaSource const * source = &srcs[run->s];
 			const uint16_t * src = (const uint16_t *)((const uint8_t *)source->pixels + (size_t)run->y * source->pitch) + run->x;
-			uint8_t *        dst = (uint8_t *)base + (size_t)(s_oy + run->y) * bpr + (size_t)(s_ox + run->x) * 2;
+			uint8_t *        dst = (uint8_t *)base + (size_t)(s_oy + run->y) * bpr + (size_t)(s_ox + run->x) * s_bpp;
 			convert_row(dst, src, run->n);
 			s_statPixels += (uint32_t)run->n;
 			s_totalPixels += (uint32_t)run->n;
@@ -1344,11 +1492,11 @@ static void yardstick(int sw, int sh)
 	uint32_t        differs = 0;
 	int             y, rep;
 	APTR            handle;
-	ULONG           base = 0, bpr = 0;
+	amiga_iptr           base = 0, bpr = 0;
 	struct TagItem  tags[] =
 	{
-		{ LBMI_BASEADDRESS, (ULONG)&base },
-		{ LBMI_BYTESPERROW, (ULONG)&bpr },
+		{ LBMI_BASEADDRESS, (amiga_iptr)&base },
+		{ LBMI_BYTESPERROW, (amiga_iptr)&bpr },
 		{ TAG_DONE,         0 }
 	};
 
@@ -1410,14 +1558,14 @@ int amiga_video_check(const uint16_t *picture, int pitch,
                       uint32_t *cardDiffers, uint32_t *shadowDiffers, AmigaRect *where)
 {
 	APTR            handle;
-	ULONG           base = 0, bpr = 0;
+	amiga_iptr           base = 0, bpr = 0;
 	uint32_t        card = 0, shadow = 0;
 	int             x, y;
 	int             swap, bgr;
 	struct TagItem  tags[] =
 	{
-		{ LBMI_BASEADDRESS, (ULONG)&base },
-		{ LBMI_BYTESPERROW, (ULONG)&bpr },
+		{ LBMI_BASEADDRESS, (amiga_iptr)&base },
+		{ LBMI_BYTESPERROW, (amiga_iptr)&bpr },
 		{ TAG_DONE,         0 }
 	};
 
@@ -1431,7 +1579,10 @@ int amiga_video_check(const uint16_t *picture, int pitch,
 	case PIXFMT_RGB16PC: swap = 1; bgr = 0; break;
 	case PIXFMT_BGR16:   swap = 0; bgr = 1; break;
 	case PIXFMT_BGR16PC: swap = 1; bgr = 1; break;
-	default:             return 0;      /* 15 bits: the card holds less */
+	default:
+		swap = bgr = 0;
+		if (s_bpp != 4) return 0;   /* 15 bits: the card holds less */
+		break;
 	}
 
 	handle = card_lock(tags);
@@ -1450,7 +1601,13 @@ int amiga_video_check(const uint16_t *picture, int pitch,
 
 		for (x = 0; x < s_width; ++x)
 		{
+#if AMIGA_VIDEO_32
+			uint16_t p = (s_bpp == 4)
+			           ? card32_to_565((const uint8_t *)base + (size_t)(s_oy + y) * bpr + (size_t)(s_ox + x) * 4)
+			           : row[x];
+#else
 			uint16_t p = row[x];
+#endif
 			if (swap) p = (uint16_t)((p << 8) | (p >> 8));
 			if (bgr)  p = (uint16_t)((p & 0x07E0) | (p << 11) | (p >> 11));
 			if (p != want[x])

@@ -28,6 +28,67 @@
 #define __STDC_FORMAT_MACROS 1
 #endif
 
+#if defined(CTP2_AMIGA_AROS) && defined(__cplusplus)
+/* AROS's libstdc++ is built with threads: <string> and the others include
+ * <pthread.h>, which includes exec/types.h and exec/semaphores.h (lists,
+ * nodes, ports, tasks). Their BYTE, WORD and BOOL differ from
+ * os/nowin32/windows.h's, struct Message, List and Node clash with the
+ * game's, and the list macros (GetHead, GetTail, REMOVE...) with its
+ * methods. It is included here first with those names renamed, the macros
+ * dropped; the game never uses exec. The platform layer is C
+ * (os/amiga/*.c, amiga_os.h) and gets exec as it is. */
+#define BYTE    ctp2_exec_BYTE
+#define WORD    ctp2_exec_WORD
+#define BOOL    ctp2_exec_BOOL
+#define Message ctp2_exec_Message
+#define List    ctp2_exec_List
+#define Node    ctp2_exec_Node
+/* Its sched.h leaves struct sched_param out when __AMIGA__ is defined (as
+ * common.mk does for the game), and pthread.h needs it. */
+#pragma push_macro("__AMIGA__")
+#undef __AMIGA__
+#include <pthread.h>
+#pragma pop_macro("__AMIGA__")
+#undef BYTE
+#undef WORD
+#undef BOOL
+#undef Message
+#undef List
+#undef Node
+#undef GetHead
+#undef GetTail
+#undef GetSucc
+#undef GetPred
+#undef REMOVE
+#undef REMHEAD
+#undef REMTAIL
+#undef ADDHEAD
+#undef ADDTAIL
+#undef NEWLIST
+#undef IsListEmpty
+#undef IsMinListEmpty
+#undef IsMsgPortEmpty
+#undef ListLength
+#undef ForeachNode
+#undef ForeachNodeSafe
+#undef SetNodeName
+#undef GetNodeName
+#undef CONST
+#undef STATIC
+#undef GLOBAL
+#undef IMPORT
+#undef REGISTER
+#undef VOLATILE
+#undef STACKED
+#undef VOID
+#undef TRUE   /* 1L, 0L: windows.h has its own */
+#undef FALSE
+#endif
+#if defined(CTP2_AMIGA_AROS)
+/* PRId64 and the like in C++ too. */
+#define __STDC_FORMAT_MACROS 1
+#endif
+
 #include <stddef.h>
 
 #ifdef __cplusplus

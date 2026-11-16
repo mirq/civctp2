@@ -83,5 +83,14 @@ Amiga:   Open the CTP2 drawer and double-click CTP2, the launcher. It sets
          CTRL-C in the Shell quits. The log is ctp2.log beside the program.
          Requirements and ENV: settings are in README-Amiga.md.
 
+AROS:    (CTP2-AROS-x86_64 archive; AROS x86_64 ABIv11, e.g. AROS One)
+         Open CTP2/ctp2_code/ctp and double-click ctp2.aros, or from a Shell:
+           cd CTP2/ctp2_code/ctp
+           ctp2.aros
+         The game's resolution is in userprofile.txt (ScreenResWidth and
+         ScreenResHeight, 1024x768); it opens a 16-bit screen of at least that
+         size, or a 32-bit one when the display has no 16-bit modes. AHI for
+         sound (optional). ENV: settings as on the Amiga (README-Amiga.md).
+
 Source code and bug reports: https://github.com/civctp2/civctp2
 Amiga port: https://github.com/mirq/civctp2 (branch amiga-port)

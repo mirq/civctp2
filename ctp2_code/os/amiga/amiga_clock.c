@@ -45,8 +45,8 @@ static void waker_start(void)
 {
 	struct TagItem tags[] =
 	{
-		{ TASKATTR_CODE,      (ULONG)waker },
-		{ TASKATTR_NAME,      (ULONG)"Call to Power II waker" },
+		{ TASKATTR_CODE,      (amiga_iptr)waker },
+		{ TASKATTR_NAME,      (amiga_iptr)"Call to Power II waker" },
 		{ TASKATTR_PRI,       (ULONG)-100 },   /* as tested: below the game, */
 		{ TASKATTR_NICE,      20 },            /* and the least CPU share */
 		{ TASKATTR_INHERITR2, TRUE },

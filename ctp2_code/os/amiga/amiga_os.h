@@ -6,11 +6,15 @@
  * on WarpOS every OS header goes in under #pragma pack(2), or a structure the
  * OS fills is read at the wrong offsets (a 24-byte struct Message instead of 20).
  * The 68060 build has the same layout either way; the pragma does no harm.
+ * AROS x86_64 was built with the CPU's natural alignment (a pointer on 8
+ * bytes): no pragma there.
  */
 #ifndef CTP2_AMIGA_OS_H
 #define CTP2_AMIGA_OS_H 1
 
+#if !defined(CTP2_AMIGA_AROS)
 #pragma pack(push, 2)
+#endif
 
 #if defined(CTP2_AMIGA_MOS)
 #undef PROTO_EXEC_H /* set by amiga_prelude.h, to keep unistd.h off exec */
@@ -53,16 +57,33 @@
 #include <proto/timer.h>
 #include <emul/emulinterface.h>
 #include <emul/emulregs.h>
+#elif defined(CTP2_AMIGA_AROS)
+#include <cybergraphx/cybergraphics.h>
+#include <proto/cybergraphics.h>
+#include <devices/ahi.h>
+#include <proto/ahi.h>
+#include <proto/timer.h>
+#include <aros/asmcall.h>
 #else
 #include <proto/timer.h>
 #include "amiga_cgx68k.h"
 #endif
 
+#if !defined(CTP2_AMIGA_AROS)
 #pragma pack(pop)
+#endif
 
 /* The OS headers' macros that clash with the game's names stop here. */
 #undef Remove
 #undef Wait
+
+/* A tag's value, and what LockBitMapTagList writes through one: as wide as a
+ * pointer (64 bits on AROS x86_64, where ti_Data is an IPTR). */
+#if defined(CTP2_AMIGA_AROS)
+typedef IPTR  amiga_iptr;
+#else
+typedef ULONG amiga_iptr;
+#endif
 
 /* Library bases this layer opens itself (amiga_platform.c): the startup code
  * provides only SysBase and DOSBase. */

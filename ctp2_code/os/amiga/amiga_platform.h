@@ -28,6 +28,11 @@ void amiga_platform_exit(void);
 #if defined(CTP2_AMIGA_WOS)
 void amiga_exit_skip_destructors(void);
 #endif
+#if defined(CTP2_AMIGA_AROS)
+/* Runs body on a stack of at least 2 MB (AROS has no stack cookie: a Shell's
+ * stack is what "stack" set, often 64 KB). */
+int  amiga_run_with_stack(int (*body)(int, char **), int argc, char **argv);
+#endif
 
 /* Exits through the game's normal cleanup after CTRL-C or a window close. */
 int  amiga_break_requested(void);

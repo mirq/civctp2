@@ -9,6 +9,9 @@
 #          <outdir>/CTP2-MorphOS-<version>.lha (the launcher and ctp2.mos
 #          only); needs lha (LHa for UNIX). An <exe> named CTP2 is the
 #          launcher: it goes to the top of the drawer, with an icon.
+#   tools/ci/package-release.sh aros <version> <outdir> <ctp2.aros>
+#       -> <outdir>/CTP2-AROS-x86_64-<version>.lha (the drawer with
+#          ctp2.aros and its icon; AROS x86_64 ABIv11); needs lha.
 #   tools/ci/package-release.sh linux <version> <outdir> <ctp2> <mapgen .so>...
 #       -> <outdir>/CTP2-Linux-x86_64-<version>.tar.gz
 #
@@ -69,6 +72,20 @@ amiga)
 		rm -f "$outdir/$mos.lha" "$prog/ctp2.060" "$prog/ctp2.wos"
 		(cd "$stage" && lha -aq "$outdir/$mos.lha" CTP2 CTP2.info)
 	fi
+	;;
+aros)
+	# No launcher (a 68k program): the game itself, double-clicked in its
+	# drawer. Its icon asks for a 2 MB stack (the program makes one anyway).
+	cp "$1" "$prog/ctp2.aros"
+	python3 "$root/tools/ci/make-icon.py" --stack 2097152 "$prog/ctp2.aros.info"
+	# Drawer icons on the way there, so Wanderer shows it.
+	python3 "$root/tools/ci/make-icon.py" --drawer "$top/ctp2_code.info"
+	python3 "$root/tools/ci/make-icon.py" --drawer "$top/ctp2_code/ctp.info"
+	cp "$root/ctp2_code/os/amiga/README.md" "$top/README-Amiga.md"
+	name=CTP2-AROS-x86_64-$version
+	rm -f "$outdir/$name.lha"
+	python3 "$root/tools/ci/make-icon.py" --drawer "$stage/CTP2.info"
+	(cd "$stage" && lha -aq "$outdir/$name.lha" CTP2 CTP2.info)
 	;;
 linux)
 	cp "$1" "$prog/ctp2"

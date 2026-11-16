@@ -6,7 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if !defined(CTP2_AMIGA_AROS) // AROS has no search.h; nothing here needs it
 #include <search.h>
+#endif
 #include <ctype.h>
 
 #ifndef WIN32

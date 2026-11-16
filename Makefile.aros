@@ -1,0 +1,108 @@
+# Call to Power II for AROS x86_64 (ABIv11, 64-bit).
+#
+#   make -f Makefile.aros -j$(nproc)      -> bin/amiga/ctp2.aros
+#
+# Built by deadwood2's AROS cross toolchain (AROS_TOOLCHAIN: the
+# toolchain-core-x86_64 directory that AROS's scripts/rebuild.sh makes,
+# option 1) against the Development drawer of an ABIv11 system
+# (AROS_SYSROOT: for example that of the Linux-hosted release,
+# AROS-202609-linux-x86_64-system/Development), with AROS's crt.library.
+# Both are described in ctp2_code/os/amiga/README.md ("AROS"). The
+# amigadev/crosstools:x86_64-aros image does not do: it is of the other
+# x86_64 AROS line, and its programs fail on ABIv11 before main().
+#
+# The generated sources (database records, SLIC and LDL parsers) come from
+# the host step in ctp2_code/os/amiga/gen.mk, and the platform layer is the
+# Amiga one (ctp2_code/os/amiga, ctp2_code/ui/aui_amiga): AROS has the same
+# intuition, cybergraphics, AHI and timer.device calls. CTP2_AMIGA_AROS marks
+# what differs: a little-endian 64-bit machine (pointers in IPTR tag values,
+# no byte swapping of the game's files, the card's PC pixel order is the
+# CPU's own, 32-bit screens).
+
+AROS_TOOLCHAIN ?= $(HOME)/aros-toolchain/toolchain-core-x86_64
+AROS_SYSROOT   ?= $(HOME)/aros-hosted/AROS-202609-linux-x86_64-system/Development
+CROSS  ?= $(AROS_TOOLCHAIN)/x86_64-aros-
+CC     := $(CROSS)gcc
+CXX    := $(CROSS)g++
+STRIP  := $(CROSS)strip
+
+SHELL := /bin/bash
+
+CTP2   := ctp2_code
+GEN    := build/amiga-gen
+OBJDIR := build/aros-x86_64
+TARGET := bin/amiga/ctp2.aros
+
+.DEFAULT_GOAL := all
+
+include $(CTP2)/os/amiga/gen.mk
+include $(CTP2)/os/amiga/sources.mk
+include $(CTP2)/os/amiga/common.mk
+
+# The baseline x86-64 (SSE2), which every AROS x86_64 machine has.
+ARCH_FLAGS := --sysroot=$(AROS_SYSROOT)
+OPT_FLAGS  ?= -O2
+
+AMIGA_DEFS += -DCTP2_AMIGA_AROS=1
+
+CFLAGS   := $(ARCH_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) $(AMIGA_INCS) $(AMIGA_C_FLAGS) $(EXTRA_CFLAGS)
+CXXFLAGS := $(ARCH_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) $(AMIGA_INCS) $(AMIGA_CXX_FLAGS) $(EXTRA_CXXFLAGS)
+
+# --wrap=fopen: every fopen goes through os/amiga/amiga_posix.c, which makes
+#   the name an AmigaDOS one (c3.h's fopen macro is undone by <cstdio>).
+# --force-group-allocation: an AROS program is a relocatable link (ld -r,
+#   by collect-aros), which keeps every C++ COMDAT group as sections of its
+#   own: 41,000 sections, each loaded on its own. With it, ld keeps one copy
+#   of each group and merges it into .text/.rodata like a final link: ~470.
+LDFLAGS := $(ARCH_FLAGS) -static-libstdc++ -Wl,--wrap=fopen -Wl,--force-group-allocation $(EXTRA_LDFLAGS)
+LIBS    := -lm
+
+# A changed flag rebuilds every object.
+BUILD_FLAGS_STAMP := $(OBJDIR)/.build-flags
+$(shell mkdir -p $(OBJDIR); f='$(CXXFLAGS) $(CFLAGS)'; [ "$$(cat $(BUILD_FLAGS_STAMP) 2>/dev/null)" = "$$f" ] || printf '%s' "$$f" > $(BUILD_FLAGS_STAMP))
+
+.PHONY: all objects clean check-tools
+all: check-tools $(TARGET)
+objects: $(AMIGA_OBJECTS)
+
+check-tools:
+	@test -x "$(CXX)" || { echo "missing compiler $(CXX) (set AROS_TOOLCHAIN, see ctp2_code/os/amiga/README.md)"; exit 1; }
+	@test -f "$(AROS_SYSROOT)/include/exec/types.h" || { echo "no AROS headers in $(AROS_SYSROOT) (set AROS_SYSROOT)"; exit 1; }
+
+$(OBJDIR)/%.o: $(CTP2)/%.cpp $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) $(AMIGA_FILE_FLAGS_$*) -c $< -o $@
+
+$(OBJDIR)/%.o: $(CTP2)/%.c $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) $(CFLAGS) $(AMIGA_FILE_FLAGS_$*) -c $< -o $@
+
+$(OBJDIR)/gen/%.o: $(GEN)/%.cpp $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CXX $<"
+	@$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/gen/%.o: $(GEN)/%.c $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+# The full link with its symbols stays beside the objects for addr2line
+# against a crash address; bin/ gets it stripped. AROS loads relocatable ELF:
+# strip keeps the relocations (--strip-unneeded, as AROS's own build does).
+DEBUG_EXE := $(OBJDIR)/ctp2.debug
+
+$(DEBUG_EXE): $(AMIGA_OBJECTS)
+	@echo "  LD  $@"
+	@$(CXX) -g -o $@ $(AMIGA_OBJECTS) $(LDFLAGS) $(LIBS)
+
+$(TARGET): $(DEBUG_EXE)
+	@mkdir -p $(dir $@)
+	@$(STRIP) --strip-unneeded --remove-section .comment -o $@ $<
+
+clean:
+	rm -rf $(OBJDIR) $(TARGET)
+
+-include $(AMIGA_OBJECTS:.o=.d)

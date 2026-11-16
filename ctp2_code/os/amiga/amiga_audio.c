@@ -37,6 +37,20 @@ static ULONG channel_info_hook(void)
 }
 
 static struct EmulLibEntry s_hookGate = { TRAP_LIB, 0, (void (*)(void))channel_info_hook };
+#elif defined(CTP2_AMIGA_AROS)
+/* AROS: a native hook, called through CallHookPkt (hook, AHIAudioCtrl,
+ * the effect info). */
+AROS_UFH3(static IPTR, channel_info_hook,
+          AROS_UFHA(struct Hook *, hook, A0),
+          AROS_UFHA(APTR, ctrl, A2),
+          AROS_UFHA(struct AHIEffChannelInfo *, info, A1))
+{
+	AROS_USERFUNC_INIT
+	(void)ctrl;
+	hook->h_Data = (APTR)(IPTR)info->ahieci_Offset[0];
+	return 0;
+	AROS_USERFUNC_EXIT
+}
 #endif
 
 #pragma pack(push, 2)
@@ -107,7 +121,9 @@ int amiga_audio_open(void)
 
 	if (s_open) return s_rate;
 
-#if defined(CTP2_AMIGA_WOS) || defined(CTP2_AMIGA_MOS)
+#if defined(CTP2_AMIGA_AROS)
+	s_rate = 44100;
+#elif defined(CTP2_AMIGA_WOS) || defined(CTP2_AMIGA_MOS)
 	s_rate = 22050;
 #else
 	s_rate = 16000;
@@ -163,6 +179,8 @@ int amiga_audio_open(void)
 
 #if defined(CTP2_AMIGA_MOS)
 	s_hook.h_Entry = (HOOKFUNC)&s_hookGate;
+#elif defined(CTP2_AMIGA_AROS)
+	s_hook.h_Entry = (HOOKFUNC)channel_info_hook;
 #else
 	s_hook.h_Entry = (HOOKFUNC)s_hookCode;
 #endif
