@@ -215,6 +215,16 @@ static FILE *open_stream(const char *name, const char *mode)
 
 FILE *__wrap_fopen(const char *name, const char *mode)
 {
+#if defined(CTP2_AMIGA_MOS)
+	/* MorphOS libnix opens stdin, stdout and stderr in its startup
+	 * (__initstdfio) as fopen((char *)1..3, NULL): handle numbers, not
+	 * names. As names they failed, and libnix ended the program with 20
+	 * before main(). */
+	if ((unsigned long)name < 4096)
+	{
+		return __real_fopen(name, mode);
+	}
+#endif
 	return open_stream(name ? amiga_fix_path(name) : NULL, mode);
 }
 

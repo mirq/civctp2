@@ -831,6 +831,19 @@ int amiga_video_shift_pending(void)
 
 int amiga_video_scroll(int x, int y, int w, int h, int dx, int dy)
 {
+	/* ENV:CTP2_CARDSCROLL=0: no shifts on the card, the map is drawn again
+	 * instead. For displays whose blitter gets an overlapping copy wrong
+	 * (QEMU's ati-vga under MorphOS: nothing moved, or torn rows). */
+	{
+		static int s_cardScroll = -1;
+		if (s_cardScroll < 0)
+		{
+			char value[8];
+			s_cardScroll = !(amiga_env_value("CTP2_CARDSCROLL", value, sizeof(value)) && value[0] == '0');
+			if (!s_cardScroll) amiga_log("Screen: no shifts on the card (ENV:CTP2_CARDSCROLL=0)\n");
+		}
+		if (!s_cardScroll) return 0;
+	}
 	/* What scroll_now would refuse, refused here, where the caller hears. */
 	{
 		int cx = x, cy = y, cw = w, ch = h;
