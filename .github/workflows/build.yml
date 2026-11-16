@@ -1,10 +1,14 @@
-# Builds the Amiga (68060, WarpOS, MorphOS) and Linux executables.
+# Builds the Amiga (68060, WarpOS, MorphOS, the launcher) and Linux programs.
 #
-# Every push and pull request: the executables are uploaded as workflow
+# Every push and pull request: the programs are uploaded as workflow
 # artifacts (Actions tab -> the run -> Artifacts).
-# A pushed tag v* (git tag v1.2 && git push fork v1.2), or a manual run with
-# "release" set, also packs the release archives (tools/ci/package-release.sh)
-# and publishes them as a GitHub release.
+# A pushed tag v<version> (git tag v0.2 && git push fork v0.2), or a manual
+# run with "release" set, also packs the release archives
+# (tools/ci/package-release.sh) and publishes them as the GitHub release
+# "Call to Power II for Amiga <version>" with tools/ci/release-notes.md:
+#   CTP2-Amiga-<version>.lha                everything but the original data
+#   CTP2-Amiga-<version>-programs-only.lha  to update an installed copy
+#   CTP2-Linux-x86_64-<version>.tar.gz
 #
 # The 68k and WarpOS cross compilers come from the amigadev/crosstools images;
 # the generated sources (database records, SLIC/LDL parsers) and the host tool
@@ -12,7 +16,7 @@
 # at the cross compiler. MorphOS builds on the runner itself with the MorphOS
 # SDK's Debian package (ppc-morphos-gcc 11.3 in /gg), checksum pinned.
 
-name: Build
+name: Build and release
 
 on:
   push:
@@ -22,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: 'Publish a release with this tag name (e.g. v0.9-amiga); empty = build only'
+        description: 'Publish a release with this tag (e.g. v0.2); empty = build only'
         required: false
         default: ''
 
@@ -42,24 +46,37 @@ env:
 
 jobs:
   amiga:
-    name: Amiga ${{ matrix.target }}
+    name: Amiga ${{ matrix.title }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: 68k
+            title: 68060 (+ launcher)
+            artifact: amiga-68060
             makefile: Makefile.amiga68k
             exe: bin/amiga/ctp2.060
-            debug: build/amiga68k/ctp2.debug
+            files: |
+              bin/amiga/ctp2.060
+              bin/amiga/CTP2
+              build/amiga68k/ctp2.debug
           - target: warpos
+            title: WarpOS
+            artifact: amiga-warpos
             makefile: Makefile.warpos
             exe: bin/amiga/ctp2.wos
-            debug: build/warpos/ctp2.debug.elf
+            files: |
+              bin/amiga/ctp2.wos
+              build/warpos/ctp2.debug.elf
           - target: morphos
+            title: MorphOS
+            artifact: amiga-morphos
             makefile: Makefile.morphos
             exe: bin/amiga/ctp2.mos
-            debug: build/morphos/ctp2.debug
+            files: |
+              bin/amiga/ctp2.mos
+              build/morphos/ctp2.debug
     steps:
       - uses: actions/checkout@v4
 
@@ -108,10 +125,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: amiga-${{ matrix.target }}
-          path: |
-            ${{ matrix.exe }}
-            ${{ matrix.debug }}
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
           if-no-files-found: error
 
   linux:
@@ -147,7 +162,7 @@ jobs:
           include-hidden-files: true
 
   release:
-    name: Release
+    name: Publish release
     needs: [ amiga, linux ]
     if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
     runs-on: ubuntu-24.04
@@ -172,22 +187,29 @@ jobs:
         run: |
           tag="${{ inputs.release }}"
           [ -n "$tag" ] || tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
           echo "TAG=$tag" >> "$GITHUB_ENV"
-          tools/ci/package-release.sh amiga "$tag" dist \
-            artifacts/amiga-68k/bin/amiga/ctp2.060 \
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          tools/ci/package-release.sh amiga "$version" dist \
+            artifacts/amiga-68060/bin/amiga/ctp2.060 \
+            artifacts/amiga-68060/bin/amiga/CTP2 \
             artifacts/amiga-warpos/bin/amiga/ctp2.wos \
             artifacts/amiga-morphos/bin/amiga/ctp2.mos
-          tools/ci/package-release.sh linux "$tag" dist \
+          tools/ci/package-release.sh linux "$version" dist \
             artifacts/linux-x86_64/ctp/ctp2 \
             artifacts/linux-x86_64/mapgen/.libs/*.so
           (cd dist && sha256sum * > SHA256SUMS.txt)
+          sed "s/@VERSION@/$version/g" tools/ci/release-notes.md > "$RUNNER_TEMP/notes.md"
 
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          title="Call to Power II for Amiga $VERSION"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --title "$title" --notes-file "$RUNNER_TEMP/notes.md"
           else
-            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$title" \
+              --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
           fi

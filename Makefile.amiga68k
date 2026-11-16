@@ -1,6 +1,11 @@
 # Call to Power II for a 68060 Amiga with an RTG card (Picasso96/CyberGraphX).
 #
-#   make -f Makefile.amiga68k -j$(nproc)      -> bin/amiga/ctp2.060
+#   make -f Makefile.amiga68k -j$(nproc)      -> bin/amiga/ctp2.060 and bin/amiga/CTP2
+#
+# bin/amiga/CTP2 is the launcher (os/amiga/launcher/launcher.c): a small
+# 68020 program for every Amiga and MorphOS that sets the game's ENV:
+# settings, screen mode and autosave, then runs ctp2.060, ctp2.wos or
+# ctp2.mos. "make -f Makefile.amiga68k launcher" builds it alone.
 #
 # Built by Bebbo's m68k-amigaos-gcc 6.5 with libnix (-noixemul), which writes
 # the hunk executable itself. The generated sources (database records, SLIC
@@ -53,8 +58,8 @@ LIBS    := -lm
 BUILD_FLAGS_STAMP := $(OBJDIR)/.build-flags
 $(shell mkdir -p $(OBJDIR); f='$(CXXFLAGS) $(CFLAGS)'; [ "$$(cat $(BUILD_FLAGS_STAMP) 2>/dev/null)" = "$$f" ] || printf '%s' "$$f" > $(BUILD_FLAGS_STAMP))
 
-.PHONY: all objects clean
-all: $(TARGET)
+.PHONY: all objects clean launcher
+all: $(TARGET) launcher
 objects: $(AMIGA_OBJECTS)
 
 $(OBJDIR)/%.o: $(CTP2)/%.cpp $(BUILD_FLAGS_STAMP) | $(GEN_STAMP)
@@ -89,7 +94,16 @@ $(TARGET): $(DEBUG_EXE)
 	@mkdir -p $(dir $@)
 	@$(CROSS)strip -o $@ $<
 
+LAUNCHER := bin/amiga/CTP2
+
+launcher: $(LAUNCHER)
+
+$(LAUNCHER): $(CTP2)/os/amiga/launcher/launcher.c $(CTP2)/os/amiga/amiga_cgx68k.h
+	@mkdir -p $(dir $@)
+	@echo "  CC  $<"
+	@$(CC) -m68020 -noixemul -O2 -Wall -s -o $@ $<
+
 clean:
-	rm -rf $(OBJDIR) $(TARGET)
+	rm -rf $(OBJDIR) $(TARGET) $(LAUNCHER)
 
 -include $(AMIGA_OBJECTS:.o=.d)

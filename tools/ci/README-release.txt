@@ -44,12 +44,13 @@ Check: after installing, these files must exist:
 Installing
 ----------
 
-1. Unpack this archive. It makes a folder "CTP2".
+1. Unpack this archive. It makes a folder (drawer) "CTP2".
 2. Copy the original game's "ctp2_data" and "Scenarios" folders into "CTP2",
    so they merge with the ones already there.
 3. Unpack this archive over them again, so the updated files from this
    release replace the original ones (the Apolyton data must win).
-4. Run the game from CTP2/ctp2_code/ctp/.
+4. Start it: on the Amiga double-click CTP2 (the launcher) in the CTP2
+   drawer; on Linux see below.
 
 On the Amiga it is easiest to do steps 1-3 on a PC and copy the finished
 CTP2 folder over (about 330 MB); UnZip and LhA from Aminet do the same on
@@ -63,14 +64,22 @@ Linux:   cd CTP2/ctp2_code/ctp && ./ctp2
          Needs SDL2, SDL2_mixer, SDL2_image and libtiff (Debian/Ubuntu:
          libsdl2-2.0-0 libsdl2-mixer-2.0-0 libsdl2-image-2.0-0 libtiff6).
 
-Amiga:   ctp2.060  68060 with FPU, AmigaOS 3.x, RTG card (CyberGraphX/P96)
-         ctp2.wos  PowerPC with WarpOS (powerpc.library), RTG card
-         ctp2.mos  MorphOS
-         128 MB of fast RAM is the target; AHI for sound (optional).
-         Open a Shell, then:
+Amiga:   Open the CTP2 drawer and double-click CTP2, the launcher. It sets
+         the program (68060, WarpOS or MorphOS: it picks the one for your
+         machine), C:InitPPC first for a Sonnet card, the screen mode (the
+         game's resolution: any 16-bit RTG mode of 800x600 or more), autosave
+         on or off, the language, sound rate and memory settings, then runs
+         the game. Settings are kept in ctp2_code/ctp/launcher.prefs.
+
+         Without the launcher, from a Shell:
            cd CTP2/ctp2_code/ctp
            ctp2.060 nointromovie        (or ctp2.wos / ctp2.mos)
          On a Sonnet PowerPC card run C:InitPPC first, before ctp2.wos.
+
+         ctp2.060  68060 with FPU, AmigaOS 3.x, RTG card (CyberGraphX/P96)
+         ctp2.wos  PowerPC with WarpOS (powerpc.library), RTG card
+         ctp2.mos  MorphOS
+         128 MB of fast RAM is the target; AHI for sound (optional).
          CTRL-C in the Shell quits. The log is ctp2.log beside the program.
          Requirements and ENV: settings are in README-Amiga.md.
 

@@ -33,6 +33,30 @@ The full links with symbols stay in `build/amiga68k/ctp2.debug`,
 `build/warpos/ctp2.debug.elf` and `build/morphos/ctp2.debug`, for `addr2line`
 against a crash address.
 
+## Launcher
+
+`bin/amiga/CTP2` (`launcher/launcher.c`, built by `make -f Makefile.amiga68k`
+for the 68020, so it runs on every Amiga and on MorphOS) is what a player
+double-clicks: the release puts it at the top of the `CTP2` drawer with an
+icon (`tools/ci/make-icon.py`). A GadTools window chooses the program (the
+ones present; WarpOS when `LIBS:powerpc.library` is there, MorphOS on
+MorphOS), `C:InitPPC` before `ctp2.wos`, the screen mode (the card's 16-bit
+RTG modes of 800x600 and more, or automatic; cursor up/down move through
+them), autosave, and the ENV: settings below a player may want (language,
+sound rate, background autosave, save compression, window building, sprite
+cache, card refresh rows, card settle time, performance log). Play, Save
+(keys P, S, Q) write:
+
+- ENV:CTP2_MODE and the others; a setting at its default is deleted, so the
+  game's own default applies;
+- `AutoSave` and, with a chosen mode, `ScreenResWidth`/`ScreenResHeight` in
+  `userprofile.txt` (the mode's size is the game's resolution); every other
+  line is kept;
+- its own choices in `ctp2_code/ctp/launcher.prefs`.
+
+Play then runs the program from its drawer with `nointromovie`, its output
+in `ctp2out.txt`, and ends when the game does.
+
 ## Running
 
 The same tree as the Linux build: the program in `ctp2_code/ctp/`, the game's

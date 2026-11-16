@@ -3,14 +3,16 @@
 # .github/workflows/build.yml, also runnable by hand from the repository root).
 #
 #   tools/ci/package-release.sh amiga <version> <outdir> <exe>...
-#       -> <outdir>/ctp2-amiga-<version>.lha and
-#          <outdir>/ctp2-amiga-exe-<version>.lha (programs only); needs lha
-#          (LHa for UNIX)
+#       -> <outdir>/CTP2-Amiga-<version>.lha (everything) and
+#          <outdir>/CTP2-Amiga-<version>-programs-only.lha (to update an
+#          installed copy); needs lha (LHa for UNIX). An <exe> named CTP2 is
+#          the launcher: it goes to the top of the drawer, with an icon.
 #   tools/ci/package-release.sh linux <version> <outdir> <ctp2> <mapgen .so>...
-#       -> <outdir>/ctp2-linux-x86_64-<version>.tar.gz
+#       -> <outdir>/CTP2-Linux-x86_64-<version>.tar.gz
 #
-# The archive holds the tree the game expects: the program in
-# CTP2/ctp2_code/ctp/, the repository's ctp2_data and Scenarios two levels up.
+# <version> without a leading "v" (0.2, not v0.2). The archive holds the tree
+# the game expects: the program in CTP2/ctp2_code/ctp/, the repository's
+# ctp2_data and Scenarios two levels up.
 # The original game data (CD or GOG) is not included; README.txt says how to
 # merge it.
 
@@ -41,16 +43,24 @@ printf '%s\n' "$version" > "$top/VERSION.txt"
 
 case $platform in
 amiga)
+	update=()
 	for exe in "$@"; do
-		cp "$exe" "$prog/"
+		if [ "$(basename "$exe")" = CTP2 ]; then
+			cp "$exe" "$top/CTP2"
+			python3 "$root/tools/ci/make-icon.py" "$top/CTP2.info"
+			update+=(CTP2/CTP2 CTP2/CTP2.info)
+		else
+			cp "$exe" "$prog/"
+			update+=("CTP2/ctp2_code/ctp/$(basename "$exe")")
+		fi
 	done
 	cp "$root/ctp2_code/os/amiga/README.md" "$top/README-Amiga.md"
-	name=ctp2-amiga-$version
-	rm -f "$outdir/$name.lha" "$outdir/ctp2-amiga-exe-$version.lha"
-	(cd "$stage" && lha -aq "$outdir/$name.lha" CTP2)
+	name=CTP2-Amiga-$version
+	rm -f "$outdir/$name.lha" "$outdir/$name-programs-only.lha"
+	python3 "$root/tools/ci/make-icon.py" --drawer "$stage/CTP2.info"
+	(cd "$stage" && lha -aq "$outdir/$name.lha" CTP2 CTP2.info)
 	# The programs alone, to update an installed tree.
-	(cd "$stage" && lha -aq "$outdir/ctp2-amiga-exe-$version.lha" \
-		CTP2/VERSION.txt $(cd "$stage" && for exe in "$@"; do echo "CTP2/ctp2_code/ctp/$(basename "$exe")"; done))
+	(cd "$stage" && lha -aq "$outdir/$name-programs-only.lha" CTP2/VERSION.txt "${update[@]}")
 	;;
 linux)
 	cp "$1" "$prog/ctp2"
@@ -60,7 +70,7 @@ linux)
 	for so in "$@"; do
 		cp "$so" "$prog/dll/map/"
 	done
-	name=ctp2-linux-x86_64-$version
+	name=CTP2-Linux-x86_64-$version
 	tar -C "$stage" -czf "$outdir/$name.tar.gz" CTP2
 	;;
 *)
