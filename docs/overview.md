@@ -73,14 +73,16 @@ libnix `getenv()` does not read `ENV:`. The code uses `amiga_env_value` /
 | `CTP2_MODE` | screen mode ID in hex. Without it, CyberGraphX's best 16-bit mode is used, then the smallest 15/16-bit mode that fits |
 | `CTP2_AHI_RATE` | AHI mixing rate, 8000–48000 (default 16000 on the 68060, 22050 on PPC) |
 | `CTP2_LANGUAGE` | ISO 639-1 language code. Without it, the Locale preferences are used |
-| `CTP2_UIPRELOAD` | when the main windows are built: `lazy` (default, on first open), `start` (while a game loads, ~19 s more), `idle` (one at a time while input is idle) |
+| `CTP2_UIPRELOAD` | when the main windows are built: `idle` (default: one at a time on the map after 1.5 s without input, a short pause each), `lazy` (on first open), `start` (while a game loads, ~19 s more) |
 | `CTP2_SCRUB` | full rows re-sent to the card every 80 ms, past the diff (default 4, `0` = off) |
 | `CTP2_SCROLLSLACK` | spare pixels across round the map surface, so that a scroll moves no memory (default 1024, rows are half; about 11 MB at 1024×768; `0` = off) |
 | `CTP2_SPRITECACHE` | unit sprite groups kept fully loaded after their animations, least recently used out first (default 8; `0` = off: each move reads the unit's sprite file before and after its animation) |
 | `CTP2_EFFECTCACHE` | effect sprite groups (combat flash, special effects; some files are 0.7–2 MB) kept loaded after use (default 4; `0` = off) |
 | `CTP2_DIRECTMAP` | `0`: the map is copied into the composed frame first, as before (default: the card gets it straight from the map's surface) |
+| `CTP2_DIRECTWIN` | `0`: opaque windows are copied into the composed frame first, as before (default: where no window covers them the card gets them straight from their own surfaces; shaped and see-through windows always go through the frame) |
+| `CTP2_MOVEBLIT` | `0`: a moved window is sent to the card again whole (default: the card's blitter carries its pixels to the new place, only what differs is written, about the strip it left) |
 | `CTP2_STRIPWRITE` | `1`: what a scroll step uncovers goes to the card without the compare (default off; worth it only where writing a pixel costs little more than comparing one) |
-| `CTP2_BENCH` | `1`: a benchmark that runs by itself on a fixed world and quits; times as `Bench:` lines in `ctp2.log` (see [testing.md](testing.md)) |
+| `CTP2_BENCH` | `1`: a benchmark that runs by itself on a fixed world and quits; times as `Bench:` lines in `ctp2.log` (see [testing.md](testing.md)). `win`: the same for windows (three managers opened, moved and closed) |
 | `CTP2_SEED` | the seed of the world, so that the quick start makes the same one every time |
 | `CTP2_CHECK` | n: every n-th copy the card is read back and compared with the picture, and each scroll's result with a fresh repaint; differences go to `ctp2.log` |
 | `CTP2_SOLIDROWS` | `0`: tiles are painted pixel by pixel as before (default: rows without a transition are copied whole) |

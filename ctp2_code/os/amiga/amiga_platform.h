@@ -210,6 +210,9 @@ void amiga_video_cursor_only(int on);
 void amiga_prof_start(void);
 void amiga_prof_poll(void);
 void amiga_prof_stop(void);
+/* What was sampled so far to path (NULL: dropped), and sampling starts
+ * again (CTP2_BENCH=win profiles each window's opening this way). */
+void amiga_prof_write(const char *path);
 /* 0: not sampled now (ENV:CTP2_PROF_EVENT, set around game events). */
 extern volatile int amiga_prof_gate;
 /* The game event being processed (-1: none), kept with each sample. */
@@ -218,6 +221,8 @@ extern volatile int amiga_prof_tag;
 /* What the copies cost since the last call (pixels, microseconds, calls), for
  * the ENV:CTP2_PERF log; the counters start again at zero. */
 void amiga_video_stats(uint32_t *pixels, uint32_t *us, uint32_t *calls);
+/* Pixels written to the card since the screen opened (never reset). */
+uint32_t amiga_video_pixels_written(void);
 
 /* The pointer: the game draws its own cursor, the system one is blanked.
  * (The system pointer is no option: Picasso96's sprite is 16 pixels wide

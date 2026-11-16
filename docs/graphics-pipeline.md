@@ -199,6 +199,40 @@ On the Amiga (`aui_ui.cpp`, `AllSolid`, `aui_StencilRectIsSolid` in
 The result was verified with a pixel diff of the panel before and after
 hovering every ring button.
 
+### Opaque windows straight to the card (`CTP2_DIRECTWIN`)
+
+The map's direct path (stage 3 of [scroll-rework-plan.md](scroll-rework-plan.md))
+is generalised to every opaque window: one without a stencil that is neither
+transparent nor translucent, with a 16-bit `aui_AmigaSurface`.
+
+- `ComposeBegin` → `FindDirectWindows` walks the windows front to back.
+  For each such window it keeps the parts of its screen rectangle that no
+  window in front covers (`m_windows`). The surface's pixel pointer and the
+  window's place are noted; `DirectWindowsValid` refuses a copy between two
+  composes if a window went, moved, or got another surface.
+- `AmigaDrawScreen` takes the pixels of those parts from the windows'
+  surfaces (`CollectSources`, `amiga_video_present_multi` with one source per
+  window), the cursor drawn into each source it touches and taken out again.
+- The frame is not read where a surface of its own shows, so
+  `aui_AmigaMouse::CopyPieces` (through `FramePieces`) copies into it only
+  what lies outside **all** direct regions, for any window. Where a direct
+  region ends (its window closed, moved, turned see-through, or got
+  covered), `ComposeBegin` marks that area dirty, so the frame is filled
+  there again from the windows.
+- The look does not change: only where the card's pixels are read from.
+  The window benchmark's pictures are byte-identical to the build before it.
+
+### Moving a window (`CTP2_MOVEBLIT`)
+
+`aui_Window::Move`/`Offset` call `amiga_ui_window_moved`. For an opaque
+window of the screen, the old and new rectangles together are shifted on the
+card by its blitter and in the shadow (`amiga_video_scroll`, queued as a map
+scroll is), the window's content moving with it. The copy that follows
+compares that whole area as before (`Move` marks it), so whatever else moved
+along wrongly (windows above, the cursor) is written again; in practice only
+the strip the window left goes to the card. Window benchmark, 8-pixel steps:
+about 3,400 pixels written a move instead of the whole window (~220,000).
+
 ### The map layer
 
 - `TiledMap` draws terrain, sprites, borders and names into the background

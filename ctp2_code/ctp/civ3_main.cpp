@@ -186,6 +186,9 @@
 #endif
 #if defined(__AUI_USE_AMIGA__)
 #include "amiga_platform.h"
+#include "ScienceManagementDialog.h"    // CTP2_BENCH=win
+#include "NationalManagementDialog.h"
+#include "DomesticManagementDialog.h"
 #endif
 
 #if defined(_DEBUG)
@@ -710,6 +713,178 @@ bool compute_scroll_deltas(sint32 time,sint32 &deltaX,sint32 &deltaY)
 #if defined(__AUI_USE_AMIGA__)
 void amiga_test_reveal(void);   // gfx/tilesys/tiledmap.cpp
 
+// ENV:CTP2_BENCH=win: the windows instead of the scrolling. Three manager
+// windows are opened and closed three times each (the first opening builds
+// the window), the last time moved 24 steps of 8 pixels while open. Logged:
+// the Open call, the frame after it (the window drawn, composed and sent to
+// the card), the close, and the moves. A picture of each window open is
+// written on the second round (RAM:bench_w<n>.ppm).
+struct AmigaWinBench
+{
+	int     window;     // 0..2
+	int     round;      // 0..2
+	int     step;       // which part of a round
+	int     moves;
+	uint64_t t0;        // when the timed part began (us)
+	uint32  mark;       // ms
+	uint32  openUs, moveUs, moveFrames;
+	uint32  written;    // pixels written to the card before the moves
+};
+static AmigaWinBench s_winBench;
+
+static void AmigaWinOpen(int which)
+{
+	switch (which)
+	{
+	case 0:  ScienceManagementDialog::Open();  break;
+	case 1:  NationalManagementDialog::Open(); break;
+	default: DomesticManagementDialog::Open(); break;
+	}
+}
+
+static void AmigaWinClose(int which)
+{
+	switch (which)
+	{
+	case 0:  ScienceManagementDialog::Close();  break;
+	case 1:  NationalManagementDialog::Close(); break;
+	default: DomesticManagementDialog::Close(); break;
+	}
+}
+
+// The window in front (the one just opened).
+static aui_Window * AmigaFrontWindow(void)
+{
+	tech_WLList<aui_Region *> * windows = g_c3ui->ChildList();
+	ListPos position = windows->GetHeadPosition();
+	for (size_t n = windows->L(); n; --n)
+	{
+		aui_Region * region = windows->GetNext(position);
+		if (region && !region->IsHidden() && region != g_background) return static_cast<aui_Window *>(region);
+	}
+	return NULL;
+}
+
+// true when done.
+static bool AmigaWinBenchTick(uint32 now)
+{
+	static const char * const names[3] = { "science", "national", "domestic" };
+	AmigaWinBench & b = s_winBench;
+
+	switch (b.step)
+	{
+	case 0:     // open it
+		if (now - b.mark < 1500) break;
+		// ENV:CTP2_PROF: the profiler samples only the opening and its
+		// frame, from the second round on, one file each.
+		if (amiga_env_flag("CTP2_PROF") && b.round > 0)
+		{
+			amiga_prof_write(NULL);
+			amiga_prof_gate = 1;
+		}
+		b.t0 = amiga_ticks_us();
+		AmigaWinOpen(b.window);
+		b.openUs = (uint32)(amiga_ticks_us() - b.t0);
+		b.t0     = amiga_ticks_us();
+		b.step   = 1;
+		break;
+
+	case 1:     // the frame after: drawn and composed (Process), sent here
+	{
+		g_c3ui->AmigaDrawScreen();
+		uint32 const frameUs = (uint32)(amiga_ticks_us() - b.t0);
+		amiga_log("Bench: %s window, round %d: open %lu ms, its frame %lu ms\n",
+		          names[b.window], b.round + 1,
+		          (unsigned long)(b.openUs / 1000), (unsigned long)(frameUs / 1000));
+		if (amiga_prof_gate && amiga_env_flag("CTP2_PROF"))
+		{
+			static char path[40];
+			amiga_prof_gate = 0;
+			sprintf(path, "RAM:prof_%s%d.bin", names[b.window], b.round + 1);
+			amiga_prof_write(path);
+		}
+		b.mark = now;
+		b.step = 2;
+		break;
+	}
+
+	case 2:     // at rest; a picture on the second round, moves on the third
+		if (now - b.mark < 1500) break;
+		if (b.round == 1)
+		{
+			static char path[32];
+			sprintf(path, "RAM:bench_w%d.ppm", b.window);
+			amiga_snapshot_request(path);
+		}
+		b.mark       = now;
+		b.moves      = 0;
+		b.moveUs     = 0;
+		b.moveFrames = 0;
+		b.written    = amiga_video_pixels_written();
+		b.step       = (b.round == 2) ? 3 : 5;
+		break;
+
+	case 3:     // a move a frame
+		if (now - b.mark < 500 && b.moves == 0) break;
+		if (b.moves > 0)
+		{
+			g_c3ui->AmigaDrawScreen();
+			b.moveUs += (uint32)(amiga_ticks_us() - b.t0);
+			++b.moveFrames;
+		}
+		if (b.moves < 24)
+		{
+			aui_Window * const w = AmigaFrontWindow();
+			if (w)
+			{
+				sint32 const dx = (b.moves < 12) ? 8 : -8;
+				b.t0 = amiga_ticks_us();
+				w->Offset(dx, 0);
+				if (!w->IsOpaque()) w->Invalidate();
+			}
+			++b.moves;
+			break;
+		}
+		amiga_log("Bench: %s window moved %lu times, %lu ms a move, %lu pixels a move to the card\n", names[b.window],
+		          (unsigned long)b.moveFrames,
+		          (unsigned long)(b.moveFrames ? b.moveUs / b.moveFrames / 1000 : 0),
+		          (unsigned long)(b.moveFrames ? (amiga_video_pixels_written() - b.written) / b.moveFrames : 0));
+		b.mark = now;
+		b.step = 5;
+		break;
+
+	case 5:     // close it
+		if (now - b.mark < 1000) break;
+		b.t0 = amiga_ticks_us();
+		AmigaWinClose(b.window);
+		b.openUs = (uint32)(amiga_ticks_us() - b.t0);
+		b.t0     = amiga_ticks_us();
+		b.step   = 6;
+		break;
+
+	case 6:
+	{
+		g_c3ui->AmigaDrawScreen();
+		uint32 const frameUs = (uint32)(amiga_ticks_us() - b.t0);
+		amiga_log("Bench: %s window, round %d: close %lu ms, its frame %lu ms\n",
+		          names[b.window], b.round + 1,
+		          (unsigned long)(b.openUs / 1000), (unsigned long)(frameUs / 1000));
+		b.mark = now;
+		b.step = 0;
+		if (++b.window == 3)
+		{
+			b.window = 0;
+			if (++b.round == 3) return true;
+		}
+		break;
+	}
+
+	default:
+		break;
+	}
+	return false;
+}
+
 static void AmigaBenchTick(void)
 {
 	static const sint32       keys[4]    = { AUI_KEYBOARD_KEY_RIGHTARROW, AUI_KEYBOARD_KEY_LEFTARROW,
@@ -745,6 +920,16 @@ static void AmigaBenchTick(void)
 	case 2:     // a few seconds at rest, then the whole map explored
 		if (now - s_bench.mark >= 6000)
 		{
+			char value[16];
+			if (amiga_env_value("CTP2_BENCH", value, sizeof(value)) && value[0] == 'w')
+			{
+				memset(&s_winBench, 0, sizeof(s_winBench));
+				s_winBench.mark = now;
+				if (amiga_env_flag("CTP2_PROF")) amiga_prof_gate = 0;
+				s_bench.state   = 20;
+				break;
+			}
+
 			amiga_test_reveal();
 			s_bench.state = 3;
 			s_bench.mark  = now;
@@ -812,6 +997,14 @@ static void AmigaBenchTick(void)
 		if (now - s_bench.mark >= 3000)
 		{
 			amiga_snapshot_request("RAM:bench_end.ppm");
+			s_bench.state = 9;
+			s_bench.mark  = now;
+		}
+		break;
+
+	case 20:    // CTP2_BENCH=win: the windows
+		if (AmigaWinBenchTick(now))
+		{
 			s_bench.state = 9;
 			s_bench.mark  = now;
 		}

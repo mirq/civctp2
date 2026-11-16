@@ -323,6 +323,20 @@ void ScienceManagementDialog::UpdateAdvanceList()
 	for(sint32 advanceIndex = 0; advanceIndex <
 		g_theAdvanceDB->NumRecords(); advanceIndex++) {
 
+#if defined(CTP2_AMIGA_BUILD)
+		// An advance no known player has would get a row built from its
+		// layout (a dozen controls) only for UpdateAdvanceItem to find it
+		// undiscovered and the row to be deleted again: most of them early
+		// in a game, ~2 s of each opening on a 68060. The same test first.
+		bool known = false;
+		for (sint32 index = 1; index <= k_SMD_CIVILIZATION_COLUMNS && !known; index++)
+		{
+			known = g_player[index] && g_player[index]->HasAdvance(g_theAdvanceDB->Get(advanceIndex)->GetIndex())
+			     && ((index == g_selected_item->GetVisiblePlayer()) || player->HasEmbassyWith(index));
+		}
+		if (!known) continue;
+#endif
+
 		ctp2_ListItem *item = CreateAdvanceItem(g_theAdvanceDB->Get(advanceIndex));
 		if (item)
 			m_advanceList->AddItem(item);

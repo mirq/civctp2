@@ -33,6 +33,9 @@
 #include "aui_blitter.h"
 
 #include <algorithm>          // std::fill, std::max, std::min
+#if defined(CTP2_AMIGA_BUILD)
+#include <vector>             // TileBlt16To16
+#endif
 #include "aui_surface.h"
 #include "aui_dirtylist.h"
 #include "aui_pixel.h"
@@ -854,6 +857,85 @@ AUI_ERRCODE aui_Blitter::TileBlt16To16(
 		{
 			uint16 *origSrcBuf = srcBuf;
 
+#if defined(CTP2_AMIGA_BUILD)
+			// The same pixels as the loops below, faster on a 68060: whole
+			// pieces of a tile's row at a time instead of a wrap test per
+			// pixel, and plain copies for the tile rows without the chroma
+			// key (most of the patterns behind the windows' panels). Each
+			// destination row y takes the tile's row y modulo its height,
+			// from the tile's first column, as below.
+			const sint32 tileDw = destRect->right - destRect->left;
+			const sint32 tileDh = destRect->bottom - destRect->top;
+			const sint32 tileW  = srcRect->right - srcRect->left;
+			const sint32 tileH  = srcRect->bottom - srcRect->top;
+			const bool   tileCopy  = (flags & k_AUI_BLITTER_FLAG_COPY) != 0;
+			const bool   tileKeyed = !tileCopy && (flags & k_AUI_BLITTER_FLAG_CHROMAKEY)
+			                         && !(flags & k_AUI_BLITTER_FLAG_BLEND);
+			if ((tileCopy || tileKeyed) && tileDw > 0 && tileDh > 0 && tileW > 0 && tileH > 0)
+			{
+				const uint16 key = (uint16)srcSurf->GetChromaKey();
+
+				// Which tile rows hold the key (worked out as they are met).
+				static std::vector<uint8> s_rowKeyed;   // 0: not known, 1: no key, 2: key
+				if (tileKeyed)
+				{
+					s_rowKeyed.assign(static_cast<size_t>(tileH), 0);
+				}
+
+				for (sint32 y = 0; y < tileDh; ++y)
+				{
+					uint16 *       d    = destBuf + y * destPitch;
+					const sint32   sy   = y % tileH;
+					const uint16 * srow = srcBuf + sy * srcPitch;
+
+					bool keyed = false;
+					if (tileKeyed)
+					{
+						uint8 & known = s_rowKeyed[static_cast<size_t>(sy)];
+						if (!known)
+						{
+							known = 1;
+							for (sint32 x = 0; x < tileW; ++x)
+							{
+								if (srow[x] == key) { known = 2; break; }
+							}
+						}
+						keyed = known == 2;
+					}
+
+					for (sint32 left = tileDw; left > 0; )
+					{
+						const sint32 n = left < tileW ? left : tileW;
+						if (keyed)
+						{
+							for (sint32 x = 0; x < n; ++x)
+							{
+								const uint16 p = srow[x];
+								if (p != key) d[x] = p;
+							}
+						}
+						else
+						{
+							uint16 *       dd = d;
+							const uint16 * ss = srow;
+							sint32         m  = n;
+							if (!(((uintptr_t)dd ^ (uintptr_t)ss) & 2))
+							{
+								if (((uintptr_t)dd & 2) && m) { *dd++ = *ss++; --m; }
+								for (; m >= 2; m -= 2, dd += 2, ss += 2)
+								{
+									*(uint32 *)dd = *(const uint32 *)ss;
+								}
+							}
+							while (m--) *dd++ = *ss++;
+						}
+						d    += n;
+						left -= n;
+					}
+				}
+			}
+			else
+#endif
 			if ( flags & k_AUI_BLITTER_FLAG_COPY )
 			{
 				const sint32 destScanWidth = 2 *

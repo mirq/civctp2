@@ -26,11 +26,11 @@
 // build manager after the first city, ~1.5 s with its fonts). ENV:CTP2_UIPRELOAD
 // chooses when:
 //
-//   lazy  (or unset): at the first open, as on the other platforms;
+//   lazy:   at the first open, as on the other platforms;
 //   start:  all of them while the game or saved game loads (the load takes
 //           those seconds longer);
-//   idle:   one at a time on the map while the player has not touched the
-//           mouse or keyboard for a while (a short pause each).
+//   idle (or unset): one at a time on the map while the player has not
+//           touched the mouse or keyboard for a while (a short pause each).
 //
 // The windows are only built here, never shown: their content is filled in
 // when they are opened, as before.
@@ -70,7 +70,8 @@ namespace
 		{
 			char buffer[32];
 			char const * value = amiga_env_value("CTP2_UIPRELOAD", buffer, sizeof(buffer)) ? buffer : NULL;
-			s_mode = PRELOAD_LAZY;
+			// Unset: while idle (the first opening of a window cost 0.5-3 s).
+			s_mode = (value && strncmp(value, "lazy", 4) == 0) ? PRELOAD_LAZY : PRELOAD_IDLE;
 			// (Also by the names "preload" and "lazypreload".)
 			if (value && (strncmp(value, "start", 5) == 0 || strcmp(value, "preload") == 0)) s_mode = PRELOAD_START;
 			if (value && (strncmp(value, "idle",  4) == 0 || strncmp(value, "lazypreload", 11) == 0

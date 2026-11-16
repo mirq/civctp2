@@ -219,11 +219,11 @@ void amiga_prof_start(void)
 	          (unsigned long)s_codeStart, (unsigned long)s_codeEnd);
 }
 
-static void dump(void)
+static void dump(const char *path)
 {
 	uint32_t const count   = s_count;
 	uint32_t const waiting = s_waiting;
-	FILE * f = fopen("RAM:ctp2prof.bin", "wb");
+	FILE * f = path ? fopen(path, "wb") : NULL;
 	if (f)
 	{
 		uint32_t head[5] = { 0x43545050u, 2, AMIGA_PROF_ENTRY, count, waiting };
@@ -231,8 +231,9 @@ static void dump(void)
 		fwrite(s_samples, 4, count * AMIGA_PROF_ENTRY, f);
 		fclose(f);
 	}
-	amiga_log("Prof: %lu samples (%lu outside the game's code, %lu with a frame chain, %lu waiting) to RAM:ctp2prof.bin\n",
-	          (unsigned long)count, (unsigned long)s_outside, (unsigned long)s_framed, (unsigned long)waiting);
+	if (path)
+		amiga_log("Prof: %lu samples (%lu outside the game's code, %lu with a frame chain, %lu waiting) to %s\n",
+		          (unsigned long)count, (unsigned long)s_outside, (unsigned long)s_framed, (unsigned long)waiting, path);
 	Forbid();
 	s_count   = 0;
 	s_waiting = 0;
@@ -244,7 +245,12 @@ static void dump(void)
 void amiga_prof_poll(void)
 {
 	if (!s_samples) return;
-	if (SetSignal(0, SIGBREAKF_CTRL_E) & SIGBREAKF_CTRL_E) dump();
+	if (SetSignal(0, SIGBREAKF_CTRL_E) & SIGBREAKF_CTRL_E) dump("RAM:ctp2prof.bin");
+}
+
+void amiga_prof_write(const char *path)
+{
+	if (s_samples) dump(path);
 }
 
 void amiga_prof_stop(void)
@@ -263,6 +269,7 @@ void amiga_prof_stop(void)
 
 void amiga_prof_start(void) {}
 void amiga_prof_poll(void)  {}
+void amiga_prof_write(const char *path) { (void)path; }
 void amiga_prof_stop(void)  {}
 
 #endif

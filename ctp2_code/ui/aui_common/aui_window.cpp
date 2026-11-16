@@ -172,6 +172,12 @@ AUI_ERRCODE aui_Window::Move( sint32 x, sint32 y )
 		g_ui->AddDirtyRect( &newRect );
 	}
 
+#if defined(__AUI_USE_AMIGA__)
+	// The card's blitter carries the window's pixels along (aui_amigaui.cpp).
+	extern void amiga_ui_window_moved(aui_Window *window, const RECT &oldRect, const RECT &newRect);
+	amiga_ui_window_moved(this, oldRect, newRect);
+#endif
+
 	return AUI_ERRCODE_OK;
 }
 
@@ -198,6 +204,12 @@ AUI_ERRCODE aui_Window::Offset( sint32 dx, sint32 dy )
 		g_ui->AddDirtyRect( &oldRect );
 		g_ui->AddDirtyRect( &newRect );
 	}
+
+#if defined(__AUI_USE_AMIGA__)
+	// The card's blitter carries the window's pixels along (aui_amigaui.cpp).
+	extern void amiga_ui_window_moved(aui_Window *window, const RECT &oldRect, const RECT &newRect);
+	amiga_ui_window_moved(this, oldRect, newRect);
+#endif
 
 	return AUI_ERRCODE_OK;
 }

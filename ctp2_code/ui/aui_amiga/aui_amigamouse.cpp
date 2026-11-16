@@ -237,6 +237,24 @@ void aui_AmigaMouse::ActivateCursor(aui_Cursor *cursor)
 	m_currentCursor = cursor;
 }
 
+bool aui_AmigaMouse::CopyPieces(aui_Window *window, const RECT &screenRect, uint32 flags)
+{
+	static std::vector<RECT> s_pieces;
+	if (!static_cast<aui_AmigaUI *>(g_ui)->FramePieces(window, screenRect, s_pieces)) return false;
+
+	for (size_t i = 0; i < s_pieces.size(); ++i)
+	{
+		RECT const & piece = s_pieces[i];
+		RECT         src   = piece;
+		OffsetRect(&src, -window->X(), -window->Y());
+		AUI_ERRCODE const errcode =
+			g_ui->BltToSecondary(piece.left, piece.top, window->TheSurface(), &src, flags);
+		Assert(errcode == AUI_ERRCODE_OK);
+	}
+	Show(screenRect);
+	return true;
+}
+
 void aui_AmigaMouse::Show(const RECT &screenRect)
 {
 	// The secondary surface goes to the card itself (AmigaDrawScreen): what
@@ -260,10 +278,11 @@ AUI_ERRCODE	aui_AmigaMouse::BltWindowToPrimary(aui_Window *window)
 		RECT screenDirtyRect = *windowDirtyRect;
 		OffsetRect(&screenDirtyRect, windowX, windowY);
 
-		// The map's window where nothing covers it: marked, not copied.
-		if (static_cast<aui_AmigaUI *>(g_ui)->IsDirectRect(window, screenDirtyRect))
+		// The map's window or an opaque window: where nothing covers it,
+		// the card takes it from the window's surface; only the rest is
+		// copied into the frame.
+		if (CopyPieces(window, screenDirtyRect, k_AUI_BLITTER_FLAG_COPY))
 		{
-			Show(screenDirtyRect);
 			continue;
 		}
 
@@ -309,11 +328,11 @@ AUI_ERRCODE	aui_AmigaMouse::BltDirtyRectInfoToPrimary()
 		RECT screenDirtyRect = *windowDirtyRect;
 		OffsetRect(&screenDirtyRect, window->X(), window->Y());
 
-		// The map's window where nothing covers it: marked, not copied; the
-		// card gets it from the window's own surface (aui_amigaui.h).
-		if (static_cast<aui_AmigaUI *>(g_ui)->IsDirectRect(window, screenDirtyRect))
+		// The map's window or an opaque window: where nothing covers it,
+		// the card gets it from the window's own surface (aui_amigaui.h);
+		// only the rest is copied into the frame.
+		if (CopyPieces(window, screenDirtyRect, blitFlags))
 		{
-			Show(screenDirtyRect);
 			continue;
 		}
 

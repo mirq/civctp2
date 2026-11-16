@@ -99,7 +99,14 @@ aui_AmigaUI::aui_AmigaUI
 	m_cursorChanged     (false),
 	m_directWindow      (NULL),
 	m_directOn          (false),
-	m_open              ()
+	m_open              (),
+	m_windows           (),
+	m_windowCount       (0),
+	m_directWanted      (-1),
+	m_directBefore      (),
+	m_covered           (),
+	m_cursorPieces      (),
+	m_cursorSaves       ()
 {
 	m_cursorShown.left = m_cursorShown.top = m_cursorShown.right = m_cursorShown.bottom = 0;
 
@@ -499,6 +506,175 @@ void aui_AmigaUI::ComposeBegin(void)
 		AddPresentAll();
 	}
 	m_directOn = on;
+
+	FindDirectWindows();
+
+	// The frame holds nothing where pixels went direct. Where that ends
+	// (a direct window went, moved, or turned see-through, or the map's
+	// open part shrank under a see-through window) the frame has to be
+	// filled again there: the screen's dirty areas make the windows copy
+	// it. (Most such changes mark that area by themselves.)
+	std::vector<RECT> now;
+	if (m_directOn) now = m_open;
+	for (size_t i = 0; i < m_windowCount; ++i)
+	{
+		now.insert(now.end(), m_windows[i].rects.begin(), m_windows[i].rects.end());
+	}
+	if (!m_directBefore.empty())
+	{
+		std::vector<RECT> gone = m_directBefore;
+		for (size_t i = 0; i < now.size() && !gone.empty(); ++i) SubtractFrom(gone, now[i]);
+		for (size_t i = 0; i < gone.size(); ++i) AddDirtyRect(&gone[i]);
+	}
+	m_directBefore.swap(now);
+}
+
+void aui_AmigaUI::FindDirectWindows(void)
+{
+	m_windowCount = 0;
+
+	if (m_directWanted < 0)
+	{
+		char value[16];
+		m_directWanted = 1;
+		if (amiga_env_value("CTP2_DIRECTWIN", value, sizeof(value))) m_directWanted = atoi(value) != 0;
+		amiga_log("Display: opaque windows go to the card %s (ENV:CTP2_DIRECTWIN)\n",
+		          m_directWanted ? "from their own surfaces" : "through the frame");
+	}
+	if (!m_directWanted || !amiga_video_has_shadow()) return;
+
+	RECT const screen = { 0, 0, m_width, m_height };
+	m_covered.clear();
+
+	// Front to back: what a window shows is what the windows in front of it
+	// leave open.
+	ListPos position = m_childList->GetHeadPosition();
+	for (size_t n = m_childList->L(); n; --n)
+	{
+		aui_Window * const window = static_cast<aui_Window *>(m_childList->GetNext(position));
+		if (!window || window->IsHidden() || window == m_directWindow) continue;
+
+		RECT const whole = { window->X(), window->Y(), window->X() + window->Width(), window->Y() + window->Height() };
+		RECT       r;
+		if (!RectIntersect(r, whole, screen)) continue;
+
+		aui_Surface * const surface = window->TheSurface();
+		if (window->IsOpaque() && !window->GetStencil() && surface
+		 && surface->IsThisA(aui_AmigaSurface::m_AmigaSurfaceClassId)
+		 && static_cast<aui_AmigaSurface *>(surface)->Pixels()
+		 && surface->BitsPerPixel() == 16
+		 && surface->Width() >= window->Width() && surface->Height() >= window->Height())
+		{
+			if (m_windowCount == m_windows.size()) m_windows.push_back(DirectWindow());
+			DirectWindow & d = m_windows[m_windowCount];
+			d.rects.clear();
+			d.rects.push_back(r);
+			for (size_t c = 0; c < m_covered.size() && !d.rects.empty(); ++c) SubtractFrom(d.rects, m_covered[c]);
+			if (!d.rects.empty())
+			{
+				d.window  = window;
+				d.surface = surface;
+				d.pixels  = static_cast<aui_AmigaSurface *>(surface)->Pixels();
+				d.x       = window->X();
+				d.y       = window->Y();
+				++m_windowCount;
+			}
+		}
+		m_covered.push_back(r);
+	}
+}
+
+bool aui_AmigaUI::DirectWindowsValid(void) const
+{
+	for (size_t i = 0; i < m_windowCount; ++i)
+	{
+		DirectWindow const & d = m_windows[i];
+
+		// Still one of the windows (compared before it is looked at: it
+		// may have been deleted).
+		bool found = false;
+		ListPos position = m_childList->GetHeadPosition();
+		for (size_t n = m_childList->L(); n && !found; --n)
+		{
+			found = static_cast<aui_Region *>(d.window) == m_childList->GetNext(position);
+		}
+		if (!found) return false;
+
+		if (d.window->IsHidden() || d.window->X() != d.x || d.window->Y() != d.y
+		 || d.window->TheSurface() != d.surface
+		 || static_cast<aui_AmigaSurface *>(d.surface)->Pixels() != d.pixels)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool aui_AmigaUI::FramePieces(aui_Window *window, const RECT &rect, std::vector<RECT> &out) const
+{
+	// Where the card takes a pixel from a surface of its own (the map's
+	// open parts, the direct windows' visible parts), what the frame holds
+	// there is never read: no window's copy has to go there, whichever
+	// window it is (one below a direct window included).
+	bool const anyDirect = (m_directOn && !m_open.empty()) || m_windowCount > 0;
+	if (!anyDirect) return false;
+
+	out.clear();
+	RECT const screen = { 0, 0, m_width, m_height };
+	RECT       r;
+	if (!RectIntersect(r, rect, screen)) return true;
+	out.push_back(r);
+	if (m_directOn)
+	{
+		for (size_t i = 0; i < m_open.size() && !out.empty(); ++i) SubtractFrom(out, m_open[i]);
+	}
+	for (size_t w = 0; w < m_windowCount && !out.empty(); ++w)
+	{
+		std::vector<RECT> const & rects = m_windows[w].rects;
+		for (size_t i = 0; i < rects.size() && !out.empty(); ++i) SubtractFrom(out, rects[i]);
+	}
+	(void)window;
+	return true;
+}
+
+void aui_AmigaUI::CollectSources(std::vector<Source> &out, bool direct, uint16 *mapBase, sint32 mapPitch) const
+{
+	out.clear();
+	if (direct && !m_open.empty())
+	{
+		Source const s = { mapBase, mapPitch, &m_open };
+		out.push_back(s);
+	}
+	if (m_busyTick) return;
+	for (size_t i = 0; i < m_windowCount; ++i)
+	{
+		DirectWindow const & d     = m_windows[i];
+		sint32 const         pitch = d.surface->Pitch();
+		Source const s =
+		{
+			reinterpret_cast<uint16 *>(d.pixels - d.y * pitch) - d.x,
+			pitch,
+			&d.rects
+		};
+		out.push_back(s);
+	}
+}
+
+void aui_AmigaUI::PictureRow(sint32 y, uint16 *row, const uint16 *frame, sint32 pitch,
+                             const std::vector<Source> &sources) const
+{
+	memcpy(row, frame + (y * pitch >> 1), static_cast<size_t>(m_width) * 2);
+	for (size_t s = 0; s < sources.size(); ++s)
+	{
+		std::vector<RECT> const & rects = *sources[s].rects;
+		for (size_t o = 0; o < rects.size(); ++o)
+		{
+			RECT const & r = rects[o];
+			if (y < r.top || y >= r.bottom) continue;
+			memcpy(row + r.left, sources[s].base + (y * sources[s].pitch >> 1) + r.left,
+			       static_cast<size_t>(r.right - r.left) * 2);
+		}
+	}
 }
 
 bool aui_AmigaUI::IsDirectRect(aui_Window *window, const RECT &rect) const
@@ -589,6 +765,13 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 	sint32   mapPitch = 0;
 	RECT     mapRect  = { 0, 0, 0, 0 };
 	bool const direct = !m_busyTick && DirectSource(mapBase, mapPitch, mapRect);
+
+	// A window went or moved since the compose: the frame may not hold what
+	// shows there yet. The next compose (in a frame or two) sees it.
+	if (!m_busyTick && m_windowCount && !DirectWindowsValid())
+	{
+		return AUI_ERRCODE_OK;
+	}
 
 	RECT cursor = { 0, 0, 0, 0 };
 	bool const showCursor = m_cursorVisible && m_cursorImage && m_mouse && !m_mouse->IsHidden();
@@ -687,30 +870,42 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 	sint32 const ch    = cursor.bottom - cursor.top;
 	bool const   drawn = showCursor && !RectEmpty(cursor) && m_composite;
 
-	RECT cursorOnMap = { 0, 0, 0, 0 };
-	bool drawnOnMap  = false;
+	// The pictures besides the frame: the map's open parts, the direct
+	// windows' visible parts.
+	static std::vector<Source> s_sources;
+	CollectSources(s_sources, direct, mapBase, mapPitch);
 
+	m_cursorPieces.clear();
 	if (drawn)
 	{
 		CursorInto(frame, pitch, cursor, m_composite);
-		drawnOnMap = direct && RectIntersect(cursorOnMap, cursor, mapRect);
-		if (drawnOnMap) CursorInto(mapBase, mapPitch, cursorOnMap, m_compositeMap);
 
 		// What the card shows there without the cursor (BusyCursor): the
-		// frame's pixels, and the map's own where it is open.
+		// frame's pixels, and each source's own where it shows.
 		memcpy(m_under, m_composite, static_cast<size_t>(cw) * ch * 2);
-		if (drawnOnMap)
+		for (size_t s = 0; s < s_sources.size(); ++s)
 		{
-			sint32 const mw = cursorOnMap.right - cursorOnMap.left;
-			for (size_t i = 0; i < m_open.size(); ++i)
+			std::vector<RECT> const & rects = *s_sources[s].rects;
+			for (size_t i = 0; i < rects.size(); ++i)
 			{
 				RECT c;
-				if (!RectIntersect(c, cursorOnMap, m_open[i])) continue;
+				if (!RectIntersect(c, cursor, rects[i])) continue;
+
+				size_t const k = m_cursorPieces.size();
+				if (k == m_cursorSaves.size()) m_cursorSaves.push_back(std::vector<uint16>());
+				std::vector<uint16> & save = m_cursorSaves[k];
+				sint32 const pw = c.right - c.left;
+				size_t const need = static_cast<size_t>(pw) * (c.bottom - c.top);
+				if (save.size() < need) save.resize(need);
+
+				CursorInto(s_sources[s].base, s_sources[s].pitch, c, &save[0]);
+				CursorPiece const piece = { s_sources[s].base, s_sources[s].pitch, c, k };
+				m_cursorPieces.push_back(piece);
+
 				for (sint32 y = c.top; y < c.bottom; ++y)
 				{
 					memcpy(m_under + (y - cursor.top) * cw + (c.left - cursor.left),
-					       m_compositeMap + (y - cursorOnMap.top) * mw + (c.left - cursorOnMap.left),
-					       static_cast<size_t>(c.right - c.left) * 2);
+					       &save[(y - c.top) * pw], static_cast<size_t>(pw) * 2);
 				}
 			}
 		}
@@ -723,7 +918,6 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 
 	// What goes out, and from which picture.
 	std::vector<RECT> fromFrame;
-	std::vector<AmigaRect> mapRects;
 	if (m_presentAll) fromFrame.push_back(screen);
 	else              fromFrame = m_present;
 
@@ -759,25 +953,31 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 		}
 	}
 
-	if (direct)
+	// Each source takes its share of what goes out; the frame the rest.
+	static std::vector<std::vector<AmigaRect> > s_sourceRects;
+	if (s_sourceRects.size() < s_sources.size() + 1) s_sourceRects.resize(s_sources.size() + 1);
+	for (size_t s = 0; s < s_sources.size(); ++s)
 	{
-		for (size_t o = 0; o < m_open.size(); ++o)
+		std::vector<AmigaRect> & out = s_sourceRects[s];
+		out.clear();
+		std::vector<RECT> const & rects = *s_sources[s].rects;
+		for (size_t o = 0; o < rects.size() && !fromFrame.empty(); ++o)
 		{
 			for (size_t i = 0; i < fromFrame.size(); ++i)
 			{
 				RECT c;
-				if (RectIntersect(c, fromFrame[i], m_open[o]))
+				if (RectIntersect(c, fromFrame[i], rects[o]))
 				{
 					AmigaRect a = { c.left, c.top, c.right, c.bottom };
-					mapRects.push_back(a);
+					out.push_back(a);
 				}
 			}
-			SubtractFrom(fromFrame, m_open[o]);
+			SubtractFrom(fromFrame, rects[o]);
 		}
 	}
 
-	std::vector<AmigaRect> frameRects;
-	frameRects.reserve(fromFrame.size());
+	std::vector<AmigaRect> & frameRects = s_sourceRects[s_sources.size()];
+	frameRects.clear();
 	for (size_t i = 0; i < fromFrame.size(); ++i)
 	{
 		AmigaRect a = { fromFrame[i].left, fromFrame[i].top, fromFrame[i].right, fromFrame[i].bottom };
@@ -788,25 +988,20 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 	// everything first and then shifts the card and writes the differences
 	// back to back, so the step appears at once.
 	{
-		AmigaSource sources[2];
-		int         n = 0;
-		if (!mapRects.empty())
+		static std::vector<AmigaSource> s_copy;
+		s_copy.clear();
+		for (size_t s = 0; s <= s_sources.size(); ++s)
 		{
-			sources[n].pixels = mapBase;
-			sources[n].pitch  = mapPitch;
-			sources[n].rects  = &mapRects[0];
-			sources[n].count  = static_cast<int>(mapRects.size());
-			++n;
+			std::vector<AmigaRect> const & rects = s_sourceRects[s];
+			if (rects.empty()) continue;
+			AmigaSource a;
+			a.pixels = (s < s_sources.size()) ? s_sources[s].base  : frame;
+			a.pitch  = (s < s_sources.size()) ? s_sources[s].pitch : pitch;
+			a.rects  = &rects[0];
+			a.count  = static_cast<int>(rects.size());
+			s_copy.push_back(a);
 		}
-		if (!frameRects.empty())
-		{
-			sources[n].pixels = frame;
-			sources[n].pitch  = pitch;
-			sources[n].rects  = &frameRects[0];
-			sources[n].count  = static_cast<int>(frameRects.size());
-			++n;
-		}
-		if (n) amiga_video_present_multi(sources, n);
+		if (!s_copy.empty()) amiga_video_present_multi(&s_copy[0], static_cast<int>(s_copy.size()));
 	}
 
 	m_present.clear();
@@ -834,15 +1029,7 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 			s_picture.resize(static_cast<size_t>(m_width) * m_height);
 			for (sint32 y = 0; y < m_height; ++y)
 			{
-				uint16 * const row = &s_picture[static_cast<size_t>(y) * m_width];
-				memcpy(row, frame + (y * pitch >> 1), static_cast<size_t>(m_width) * 2);
-				for (size_t o = 0; direct && o < m_open.size(); ++o)
-				{
-					RECT const & r = m_open[o];
-					if (y < r.top || y >= r.bottom) continue;
-					memcpy(row + r.left, mapBase + (y * mapPitch >> 1) + r.left,
-					       static_cast<size_t>(r.right - r.left) * 2);
-				}
+				PictureRow(y, &s_picture[static_cast<size_t>(y) * m_width], frame, pitch, s_sources);
 			}
 
 			uint32_t  cardDiffers = 0, shadowDiffers = 0;
@@ -856,6 +1043,48 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 					amiga_log("Check: the card differs from the picture in %lu pixels (%ld,%ld-%ld,%ld), the shadow in %lu\n",
 					          (unsigned long)cardDiffers, (long)where.left, (long)where.top,
 					          (long)where.right, (long)where.bottom, (unsigned long)shadowDiffers);
+					// The first two: the picture and the card as PPMs, and
+					// how the screen stood.
+					if (s_bad <= 2)
+					{
+						char path[40];
+						sprintf(path, "RAM:checkpic%ld.ppm", (long)s_bad);
+						if (FILE * f = fopen(path, "wb"))
+						{
+							fprintf(f, "P6\n%ld %ld\n255\n", (long)m_width, (long)m_height);
+							std::vector<uint8> line(static_cast<size_t>(m_width) * 3);
+							for (sint32 y = 0; y < m_height; ++y)
+							{
+								uint16 const * row = &s_picture[static_cast<size_t>(y) * m_width];
+								for (sint32 x = 0; x < m_width; ++x)
+								{
+									line[x * 3 + 0] = static_cast<uint8>(((row[x] >> 11) & 0x1F) << 3);
+									line[x * 3 + 1] = static_cast<uint8>(((row[x] >> 5) & 0x3F) << 2);
+									line[x * 3 + 2] = static_cast<uint8>((row[x] & 0x1F) << 3);
+								}
+								fwrite(&line[0], 1, line.size(), f);
+							}
+							fclose(f);
+						}
+						sprintf(path, "RAM:checkcard%ld.ppm", (long)s_bad);
+						amiga_video_dump_card(path);
+						ListPos position = m_childList->GetHeadPosition();
+						for (size_t n = m_childList->L(); n; --n)
+						{
+							aui_Window * window = static_cast<aui_Window *>(m_childList->GetNext(position));
+							if (!window) continue;
+							size_t parts = 0;
+							for (size_t i = 0; i < m_windowCount; ++i)
+							{
+								if (m_windows[i].window == window) parts = m_windows[i].rects.size();
+							}
+							amiga_log("Check:   window %ld at %ld,%ld %ldx%ld%s%s%s%s, %lu direct parts\n", (long)window->Id(),
+							          (long)window->X(), (long)window->Y(), (long)window->Width(), (long)window->Height(),
+							          window->IsHidden() ? " hidden" : "", window->IsOpaque() ? " opaque" : "",
+							          window->GetStencil() ? " stencil" : "",
+							          window == m_directWindow ? " (the map)" : "", (unsigned long)parts);
+						}
+					}
 				}
 				if ((s_checked & 63) == 0)
 				{
@@ -880,17 +1109,7 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 			std::vector<uint16> row(static_cast<size_t>(m_width));
 			for (sint32 y = 0; y < m_height; ++y)
 			{
-				memcpy(&row[0], frame + (y * pitch >> 1), static_cast<size_t>(m_width) * 2);
-				if (direct)
-				{
-					for (size_t o = 0; o < m_open.size(); ++o)
-					{
-						RECT const & r = m_open[o];
-						if (y < r.top || y >= r.bottom) continue;
-						memcpy(&row[r.left], mapBase + (y * mapPitch >> 1) + r.left,
-						       static_cast<size_t>(r.right - r.left) * 2);
-					}
-				}
+				PictureRow(y, &row[0], frame, pitch, s_sources);
 				for (sint32 x = 0; x < m_width; ++x)
 				{
 					uint16 const p = row[x];
@@ -916,10 +1135,16 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 			{
 				aui_Region * window = m_childList->GetNext(position);
 				if (!window) continue;
-				amiga_log("Snapshot:   window %ld at %ld,%ld %ldx%ld%s%s\n", (long)window->Id(),
+				size_t parts = 0;
+				for (size_t i = 0; i < m_windowCount; ++i)
+				{
+					if (static_cast<aui_Region *>(m_windows[i].window) == window) parts = m_windows[i].rects.size();
+				}
+				amiga_log("Snapshot:   window %ld at %ld,%ld %ldx%ld%s%s%s\n", (long)window->Id(),
 				          (long)window->X(), (long)window->Y(), (long)window->Width(), (long)window->Height(),
 				          window->IsHidden() ? " hidden" : "",
-				          window == static_cast<aui_Region *>(m_directWindow) ? " (the map)" : "");
+				          window == static_cast<aui_Region *>(m_directWindow) ? " (the map)" : "",
+				          parts ? " (direct)" : "");
 			}
 			for (size_t o = 0; direct && o < m_open.size(); ++o)
 			{
@@ -934,7 +1159,12 @@ snapshot_done:
 
 	if (drawn)
 	{
-		if (drawnOnMap) CursorOutOf(mapBase, mapPitch, cursorOnMap, m_compositeMap);
+		for (size_t k = m_cursorPieces.size(); k-- > 0; )
+		{
+			CursorPiece const & piece = m_cursorPieces[k];
+			CursorOutOf(piece.base, piece.pitch, piece.rect, &m_cursorSaves[piece.save][0]);
+		}
+		m_cursorPieces.clear();
 		CursorOutOf(frame, pitch, cursor, m_composite);
 	}
 
@@ -1185,6 +1415,68 @@ void aui_AmigaUI::BusyTick(void)
 void amiga_ui_compose_begin(void)
 {
 	if (g_ui) static_cast<aui_AmigaUI *>(g_ui)->ComposeBegin();
+}
+
+// aui_Window::Move/Offset: an opaque window moved from oldRect to newRect
+// (screen). Its pixels are already on the card at the old place: the card's
+// blitter carries them to the new one, and the shadow goes along, so the
+// copy that follows (the window's whole old and new area is marked) writes
+// only what differs from that: the strip the window left, mostly. Whatever
+// else lay in that area (windows above, the cursor) moved too and is put
+// right by the same compare. ENV:CTP2_MOVEBLIT=0: not done.
+void amiga_ui_window_moved(aui_Window *window, const RECT &oldRect, const RECT &newRect)
+{
+	if (g_ui) static_cast<aui_AmigaUI *>(g_ui)->WindowMoved(window, oldRect, newRect);
+}
+
+void aui_AmigaUI::WindowMoved(aui_Window *window, const RECT &oldRect, const RECT &newRect)
+{
+	static int s_wanted = -1;
+	if (s_wanted < 0)
+	{
+		char value[8];
+		s_wanted = !(amiga_env_value("CTP2_MOVEBLIT", value, sizeof(value)) && value[0] == '0');
+	}
+	if (!s_wanted || !window || window->IsHidden() || !window->IsOpaque() || window->GetStencil()) return;
+	if (window == m_directWindow || !amiga_video_has_shadow()) return;
+
+	// Only one of the screen's windows (a control's own Move goes elsewhere).
+	bool found = false;
+	ListPos position = m_childList->GetHeadPosition();
+	for (size_t n = m_childList->L(); n && !found; --n)
+	{
+		found = static_cast<aui_Region *>(window) == m_childList->GetNext(position);
+	}
+	if (!found) return;
+
+	sint32 const mx = newRect.left - oldRect.left;
+	sint32 const my = newRect.top  - oldRect.top;
+	if (!mx && !my) return;
+
+	RECT const area =
+	{
+		std::min(oldRect.left,   newRect.left),
+		std::min(oldRect.top,    newRect.top),
+		std::max(oldRect.right,  newRect.right),
+		std::max(oldRect.bottom, newRect.bottom)
+	};
+	// (A shift the whole screen wide goes one way at a time: amiga_video.)
+	if (mx && my && area.left <= 0 && area.right >= m_width) return;
+
+	if (amiga_perf)
+	{
+		static int s_logged = 0;
+		if (s_logged < 12)
+		{
+			++s_logged;
+			amiga_log("Moved: window %ld %ld,%ld-%ld,%ld to %ld,%ld\n", (long)window->Id(),
+			          (long)oldRect.left, (long)oldRect.top, (long)oldRect.right, (long)oldRect.bottom,
+			          (long)newRect.left, (long)newRect.top);
+		}
+	}
+
+	// The content moves with the window: positive values move it left/up.
+	amiga_video_scroll(area.left, area.top, area.right - area.left, area.bottom - area.top, -mx, -my);
 }
 
 // The map's window (backgroundwin.cpp), NULL when it goes.

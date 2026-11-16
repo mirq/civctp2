@@ -696,6 +696,7 @@ static int clip(int *x, int *y, int *w, int *h)
 #define SEG 16
 
 static uint32_t s_statPixels;
+static uint32_t s_totalPixels;   /* written since the start (amiga_video_pixels_written) */
 
 /* Whether n pixels differ. A whole aligned segment as eight longwords; the
  * ends of a row (and odd addresses) pixel by pixel. */
@@ -1043,6 +1044,11 @@ void amiga_video_stats(uint32_t *pixels, uint32_t *us, uint32_t *calls)
 	s_statCalls  = 0;
 }
 
+uint32_t amiga_video_pixels_written(void)
+{
+	return s_totalPixels;
+}
+
 int amiga_video_has_shadow(void)
 {
 	return s_screen && s_shadow && !s_shadowOff;
@@ -1276,6 +1282,7 @@ static void present_rects(const AmigaSource *srcs, int nsrc)
 			uint8_t *        dst = (uint8_t *)base + (size_t)(s_oy + run->y) * bpr + (size_t)(s_ox + run->x) * 2;
 			convert_row(dst, src, run->n);
 			s_statPixels += (uint32_t)run->n;
+			s_totalPixels += (uint32_t)run->n;
 		}
 		AMIGA_PERF_END(t0, AMIGA_PERF_WRITE);
 #if defined(CTP2_AMIGA_WOS)

@@ -72,6 +72,11 @@ private:
 	// Copies the rectangles of the secondary surface just drawn to the
 	// primary one and records them for the frame copy.
 	void Show(const RECT &screenRect);
+	// For a window whose pixels go to the card from its own surface (the
+	// map, an opaque window): copies into the frame only the parts of
+	// screenRect it does not show itself, and records screenRect. false:
+	// not such a window (copy the whole rectangle).
+	bool CopyPieces(aui_Window *window, const RECT &screenRect, uint32 flags);
 
 	aui_Cursor *m_currentCursor;
 	uint32      m_lastFrameTick;

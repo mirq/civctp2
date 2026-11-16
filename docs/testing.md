@@ -80,6 +80,17 @@ Leave the pointer away from the screen's edges. Compare two builds by their
 `bench_sight`, `bench_end`), which must be identical when only speed
 changed.
 
+`setenv CTP2_BENCH win` runs the window benchmark instead of the scrolling:
+the science, national and domestic managers are opened and closed three
+times each (the first opening builds the window) and moved 24 steps of 8
+pixels on the third round. It logs the time of each `Open` call and of the
+frame after it, the close, and per move the time and the pixels written to
+the card, and writes `RAM:bench_w0..2.ppm` with each window open (to compare
+two builds; the pointer's place changes the status bar and tooltips). With
+`CTP2_PROF` set it profiles each opening from the second round into
+`RAM:prof_<window><round>.bin`. Set `CTP2_UIPRELOAD lazy` for comparable
+times: idle building runs in the benchmark's pauses otherwise.
+
 `setenv CTP2_CHECK 8` adds the self-check (`Check:` lines). Expect a few
 tens of pixels now and then from the card check and a few thousand after
 each scroll, all on sprites; anything on the terrain, or large numbers, is a

@@ -118,6 +118,50 @@ public:
 	// surface: the composition then only marks it.
 	bool IsDirectRect(aui_Window *window, const RECT &rect) const;
 
+	// The other opaque windows (no stencil, not transparent or translucent)
+	// go to the card from their own surfaces too, where no window above
+	// covers them (ENV:CTP2_DIRECTWIN, 0: through the frame as before). The
+	// look is the same: only where the pixels are read from changes.
+	// Whether any pixels go to the card from a surface of their own (the
+	// map or a direct window); out then holds the parts of rect (screen)
+	// that still have to be copied into the frame from window (often none:
+	// the frame is not read where a surface of its own shows).
+	bool FramePieces(aui_Window *window, const RECT &rect, std::vector<RECT> &out) const;
+
+	// An opaque window moved (screen rectangles): its pixels move on the
+	// card (ENV:CTP2_MOVEBLIT, 0: sent again instead).
+	void WindowMoved(aui_Window *window, const RECT &oldRect, const RECT &newRect);
+
+private:
+	// An opaque window that goes to the card from its own surface.
+	struct DirectWindow
+	{
+		aui_Window *      window;
+		aui_Surface *     surface;
+		uint8 *           pixels;   // its surface's first pixel at the compose
+		sint32            x, y;     // where it was then
+		std::vector<RECT> rects;    // its parts no window above covers, screen
+	};
+	// Which windows go direct, as the windows stand now (ComposeBegin).
+	void FindDirectWindows(void);
+	// Whether they still stand as they did at the compose (a copy between
+	// two composes, for the cursor, must not read a window that went).
+	bool DirectWindowsValid(void) const;
+
+	// One picture the card gets pixels from, besides the frame.
+	struct Source
+	{
+		uint16 *                  base;    // its screen pixel (0, 0)
+		sint32                    pitch;
+		const std::vector<RECT> * rects;   // where it shows, screen
+	};
+	// The map and the direct windows, as sources (none in a busy tick).
+	void CollectSources(std::vector<Source> &out, bool direct, uint16 *mapBase, sint32 mapPitch) const;
+	// Row y of the picture as it should be on the card: the frame, and the
+	// sources where they show.
+	void PictureRow(sint32 y, uint16 *row, const uint16 *frame, sint32 pitch,
+	                const std::vector<Source> &sources) const;
+
 private:
 	void CursorRect(RECT &rect) const;
 	void PresentRect(const RECT &rect);
@@ -161,6 +205,23 @@ private:
 	aui_Window *        m_directWindow;
 	bool                m_directOn;
 	std::vector<RECT>   m_open;          // the open parts of the map's window, screen
+
+	std::vector<DirectWindow> m_windows; // the direct windows (the first m_windowCount)
+	size_t              m_windowCount;
+	sint32              m_directWanted;  // ENV:CTP2_DIRECTWIN; -1: not read yet
+	std::vector<RECT>   m_directBefore;  // what went direct after the last compose
+	std::vector<RECT>   m_covered;       // scratch for FindDirectWindows
+
+	// What the cursor covers in each source, while it is drawn there.
+	struct CursorPiece
+	{
+		uint16 * base;
+		sint32   pitch;
+		RECT     rect;
+		size_t   save;                   // which of m_cursorSaves
+	};
+	std::vector<CursorPiece>          m_cursorPieces;
+	std::vector<std::vector<uint16> > m_cursorSaves;
 };
 
 typedef aui_AmigaUI aui_NativeUI;
