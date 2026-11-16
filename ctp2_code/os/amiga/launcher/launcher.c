@@ -42,7 +42,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static const char version[] __attribute__((used)) = "$VER: CTP2 Launcher 1.0 (16.11.2026)";
+static const char version[] __attribute__((used)) = "$VER: CTP2 Launcher 1.1 (16.11.2026)";
 
 struct IntuitionBase * IntuitionBase;
 struct GfxBase *       GfxBase;
@@ -61,8 +61,9 @@ static const char * const s_langCode[] = { "",                "en",      "de",  
 static const char * const s_rateName[] = { "Default", "11025 Hz", "16000 Hz", "22050 Hz", "32000 Hz", "44100 Hz", NULL };
 static const char * const s_rateCode[] = { "",        "11025",    "16000",    "22050",    "32000",    "44100" };
 
-static const char * const s_preloadName[] = { "When first opened", "While a game loads", "When idle on the map", NULL };
-static const char * const s_preloadCode[] = { "",                  "start",              "idle" };
+/* The game's default (unset) is idle since 0.2. */
+static const char * const s_preloadName[] = { "When idle on the map", "When first opened", "While a game loads", NULL };
+static const char * const s_preloadCode[] = { "",                     "lazy",              "start" };
 
 struct Settings
 {
@@ -78,6 +79,8 @@ struct Settings
 	LONG spritecache;
 	LONG scrub;
 	LONG cardsettle;
+	int  directwin;         /* ENV:CTP2_DIRECTWIN and CTP2_MOVEBLIT */
+	int  cardscroll;        /* ENV:CTP2_CARDSCROLL */
 	int  perf;
 };
 
@@ -183,6 +186,13 @@ static int find_key(const char *text, const char *key, char *value, int size)
 
 /* ---- Defaults, launcher.prefs, ENV: and userprofile.txt ------------------- */
 
+/* CTP2_UIPRELOAD's value as a choice ("idle" is the default, as unset). */
+static int preload_index(const char *code)
+{
+	if (strcmp(code, "idle") == 0) return 0;
+	return index_of(s_preloadCode, 3, code);
+}
+
 static int is_morphos(void)
 {
 	return FindResident((CONST_STRPTR)"MorphOS") != NULL;
@@ -212,6 +222,8 @@ static void defaults(void)
 	s_set.spritecache = 8;
 	s_set.scrub       = 4;
 	s_set.cardsettle  = 500;
+	s_set.directwin   = 1;
+	s_set.cardscroll  = 1;
 	s_set.perf        = 0;
 
 	/* What ENV: holds now (a player may have set some by hand). */
@@ -220,10 +232,12 @@ static void defaults(void)
 	if (env_get("CTP2_SAVELEVEL", buf, sizeof(buf)))   s_set.savelevel = atoi(buf);
 	if (env_get("CTP2_LANGUAGE", buf, sizeof(buf)))    s_set.language = index_of(s_langCode, 8, buf);
 	if (env_get("CTP2_AHI_RATE", buf, sizeof(buf)))    s_set.rate = index_of(s_rateCode, 6, buf);
-	if (env_get("CTP2_UIPRELOAD", buf, sizeof(buf)))   s_set.preload = index_of(s_preloadCode, 3, buf);
+	if (env_get("CTP2_UIPRELOAD", buf, sizeof(buf)))   s_set.preload = preload_index(buf);
 	if (env_get("CTP2_SPRITECACHE", buf, sizeof(buf))) s_set.spritecache = atol(buf);
 	if (env_get("CTP2_SCRUB", buf, sizeof(buf)))       s_set.scrub = atol(buf);
 	if (env_get("CTP2_CARDSETTLE", buf, sizeof(buf)))  s_set.cardsettle = atol(buf);
+	if (env_get("CTP2_DIRECTWIN", buf, sizeof(buf)))   s_set.directwin = buf[0] != '0';
+	if (env_get("CTP2_CARDSCROLL", buf, sizeof(buf)))  s_set.cardscroll = buf[0] != '0';
 	if (env_get("CTP2_PERF", buf, sizeof(buf)))        s_set.perf = buf[0] != '0';
 
 	game_file(path, sizeof(path), "userprofile.txt");
@@ -255,10 +269,12 @@ static void load_prefs(void)
 	if (find_key(text, "SaveLevel", buf, sizeof(buf)))   s_set.savelevel = atoi(buf);
 	if (find_key(text, "Language", buf, sizeof(buf)))    s_set.language = index_of(s_langCode, 8, buf);
 	if (find_key(text, "AhiRate", buf, sizeof(buf)))     s_set.rate = index_of(s_rateCode, 6, buf);
-	if (find_key(text, "UiPreload", buf, sizeof(buf)))   s_set.preload = index_of(s_preloadCode, 3, buf);
+	if (find_key(text, "UiPreload", buf, sizeof(buf)))   s_set.preload = preload_index(buf);
 	if (find_key(text, "SpriteCache", buf, sizeof(buf))) s_set.spritecache = atol(buf);
 	if (find_key(text, "Scrub", buf, sizeof(buf)))       s_set.scrub = atol(buf);
 	if (find_key(text, "CardSettle", buf, sizeof(buf)))  s_set.cardsettle = atol(buf);
+	if (find_key(text, "DirectWin", buf, sizeof(buf)))   s_set.directwin = atoi(buf);
+	if (find_key(text, "CardScroll", buf, sizeof(buf)))  s_set.cardscroll = atoi(buf);
 	if (find_key(text, "Perf", buf, sizeof(buf)))        s_set.perf = atoi(buf);
 	FreeVec(text);
 
@@ -278,10 +294,13 @@ static void save_prefs(void)
 	if (s_set.mode != INVALID_ID) sprintf(mode, "%08lx", (unsigned long)s_set.mode);
 	sprintf(text,
 	        "Program=%s\nInitPPC=%d\nMode=%s\nBgSave=%d\nSaveLevel=%d\nLanguage=%s\n"
-	        "AhiRate=%s\nUiPreload=%s\nSpriteCache=%ld\nScrub=%ld\nCardSettle=%ld\nPerf=%d\n",
+	        "AhiRate=%s\nUiPreload=%s\nSpriteCache=%ld\nScrub=%ld\nCardSettle=%ld\n"
+	        "DirectWin=%d\nCardScroll=%d\nPerf=%d\n",
 	        s_progFile[s_set.program], s_set.initPPC, mode, s_set.bgsave, s_set.savelevel,
-	        s_langCode[s_set.language], s_rateCode[s_set.rate], s_preloadCode[s_set.preload],
-	        (long)s_set.spritecache, (long)s_set.scrub, (long)s_set.cardsettle, s_set.perf);
+	        s_langCode[s_set.language], s_rateCode[s_set.rate],
+	        s_set.preload ? s_preloadCode[s_set.preload] : "idle",
+	        (long)s_set.spritecache, (long)s_set.scrub, (long)s_set.cardsettle,
+	        s_set.directwin, s_set.cardscroll, s_set.perf);
 	fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
 	if (fh)
 	{
@@ -309,6 +328,9 @@ static void apply_env(void)
 	env_set_num("CTP2_SPRITECACHE", s_set.spritecache, 8);
 	env_set_num("CTP2_SCRUB",       s_set.scrub, 4);
 	env_set_num("CTP2_CARDSETTLE",  s_set.cardsettle, 500);
+	env_set("CTP2_DIRECTWIN", s_set.directwin ? NULL : "0");
+	env_set("CTP2_MOVEBLIT",  s_set.directwin ? NULL : "0");
+	env_set("CTP2_CARDSCROLL", s_set.cardscroll ? NULL : "0");
 	env_set("CTP2_PERF",      s_set.perf ? "1" : NULL);
 }
 
@@ -460,7 +482,7 @@ static int mode_index(ULONG id)
 enum
 {
 	G_PROGRAM, G_INITPPC, G_MODES, G_AUTOSAVE, G_BGSAVE, G_SAVELEVEL, G_LANGUAGE,
-	G_RATE, G_PRELOAD, G_SPRITECACHE, G_SCRUB, G_CARDSETTLE, G_PERF,
+	G_RATE, G_PRELOAD, G_SPRITECACHE, G_SCRUB, G_CARDSETTLE, G_DIRECTWIN, G_CARDSCROLL, G_PERF,
 	G_PLAY, G_SAVE, G_QUIT, G_COUNT
 };
 
@@ -509,7 +531,7 @@ static int open_window(void)
 		"Program", "Run C:InitPPC first", "Screen mode", "Autosave each turn",
 		"Autosave in the background", "Save compression", "Language", "Sound rate",
 		"Build the windows", "Unit sprites kept", "Card refresh rows", "Card settle (ms)",
-		"Performance log"
+		"Windows straight to the card", "Scroll on the card", "Performance log"
 	};
 	struct Screen *   scr;
 	struct NewGadget  ng;
@@ -582,6 +604,8 @@ static int open_window(void)
 	ROW(G_SCRUB,       INTEGER_KIND, GTIN_Number, (ULONG)s_set.scrub,       GTIN_MaxChars, 4, TAG_DONE);
 	ROW(G_CARDSETTLE,  INTEGER_KIND, GTIN_Number, (ULONG)s_set.cardsettle,  GTIN_MaxChars, 5, TAG_DONE);
 	ng.ng_Width = 26;
+	ROW(G_DIRECTWIN,  CHECKBOX_KIND, GTCB_Checked, (ULONG)s_set.directwin,  GTCB_Scaled, TRUE, TAG_DONE);
+	ROW(G_CARDSCROLL, CHECKBOX_KIND, GTCB_Checked, (ULONG)s_set.cardscroll, GTCB_Scaled, TRUE, TAG_DONE);
 	ROW(G_PERF, CHECKBOX_KIND, GTCB_Checked, (ULONG)s_set.perf, GTCB_Scaled, TRUE, TAG_DONE);
 #undef ROW
 
@@ -710,6 +734,8 @@ static int run_window(void)
 				case G_LANGUAGE:  s_set.language = code; break;
 				case G_RATE:      s_set.rate = code; break;
 				case G_PRELOAD:   s_set.preload = code; break;
+				case G_DIRECTWIN: s_set.directwin = (gad->Flags & GFLG_SELECTED) != 0; break;
+				case G_CARDSCROLL: s_set.cardscroll = (gad->Flags & GFLG_SELECTED) != 0; break;
 				case G_PERF:      s_set.perf = (gad->Flags & GFLG_SELECTED) != 0; break;
 				case G_PLAY:      read_integers(); return 1;
 				case G_SAVE:      read_integers(); save_prefs(); update_profile(); apply_env(); break;

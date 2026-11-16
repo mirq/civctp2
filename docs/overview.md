@@ -81,6 +81,7 @@ libnix `getenv()` does not read `ENV:`. The code uses `amiga_env_value` /
 | `CTP2_DIRECTMAP` | `0`: the map is copied into the composed frame first, as before (default: the card gets it straight from the map's surface) |
 | `CTP2_DIRECTWIN` | `0`: opaque windows are copied into the composed frame first, as before (default: where no window covers them the card gets them straight from their own surfaces; shaped and see-through windows always go through the frame) |
 | `CTP2_MOVEBLIT` | `0`: a moved window is sent to the card again whole (default: the card's blitter carries its pixels to the new place, only what differs is written, about the strip it left) |
+| `CTP2_CARDSCROLL` | `0`: no shifts on the card's blitter; a scrolled map is sent again instead (for displays whose blitter gets overlapping copies wrong, such as QEMU's ati-vga under MorphOS) |
 | `CTP2_STRIPWRITE` | `1`: what a scroll step uncovers goes to the card without the compare (default off; worth it only where writing a pixel costs little more than comparing one) |
 | `CTP2_BENCH` | `1`: a benchmark that runs by itself on a fixed world and quits; times as `Bench:` lines in `ctp2.log` (see [testing.md](testing.md)). `win`: the same for windows (three managers opened, moved and closed) |
 | `CTP2_SEED` | the seed of the world, so that the quick start makes the same one every time |

@@ -68,8 +68,8 @@ Amiga:   Open the CTP2 drawer and double-click CTP2, the launcher. It sets
          the program (68060, WarpOS or MorphOS: it picks the one for your
          machine), C:InitPPC first for a Sonnet card, the screen mode (the
          game's resolution: any 16-bit RTG mode of 800x600 or more), autosave
-         on or off, the language, sound rate and memory settings, then runs
-         the game. Settings are kept in ctp2_code/ctp/launcher.prefs.
+         on or off, the language, sound rate, memory and display settings,
+         then runs the game. Settings are kept in ctp2_code/ctp/launcher.prefs.
 
          Without the launcher, from a Shell:
            cd CTP2/ctp2_code/ctp

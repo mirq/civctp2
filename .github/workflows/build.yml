@@ -8,6 +8,7 @@
 # "Call to Power II for Amiga <version>" with tools/ci/release-notes.md:
 #   CTP2-Amiga-<version>.lha                everything but the original data
 #   CTP2-Amiga-<version>-programs-only.lha  to update an installed copy
+#   CTP2-MorphOS-<version>.lha              the launcher and ctp2.mos only
 #   CTP2-Linux-x86_64-<version>.tar.gz
 #
 # The 68k and WarpOS cross compilers come from the amigadev/crosstools images;

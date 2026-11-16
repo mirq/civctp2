@@ -3,10 +3,12 @@
 # .github/workflows/build.yml, also runnable by hand from the repository root).
 #
 #   tools/ci/package-release.sh amiga <version> <outdir> <exe>...
-#       -> <outdir>/CTP2-Amiga-<version>.lha (everything) and
+#       -> <outdir>/CTP2-Amiga-<version>.lha (everything),
 #          <outdir>/CTP2-Amiga-<version>-programs-only.lha (to update an
-#          installed copy); needs lha (LHa for UNIX). An <exe> named CTP2 is
-#          the launcher: it goes to the top of the drawer, with an icon.
+#          installed copy) and, when ctp2.mos is among them,
+#          <outdir>/CTP2-MorphOS-<version>.lha (the launcher and ctp2.mos
+#          only); needs lha (LHa for UNIX). An <exe> named CTP2 is the
+#          launcher: it goes to the top of the drawer, with an icon.
 #   tools/ci/package-release.sh linux <version> <outdir> <ctp2> <mapgen .so>...
 #       -> <outdir>/CTP2-Linux-x86_64-<version>.tar.gz
 #
@@ -61,6 +63,12 @@ amiga)
 	(cd "$stage" && lha -aq "$outdir/$name.lha" CTP2 CTP2.info)
 	# The programs alone, to update an installed tree.
 	(cd "$stage" && lha -aq "$outdir/$name-programs-only.lha" CTP2/VERSION.txt "${update[@]}")
+	# MorphOS: the same drawer with only its program beside the launcher.
+	if [ -f "$prog/ctp2.mos" ]; then
+		mos=CTP2-MorphOS-$version
+		rm -f "$outdir/$mos.lha" "$prog/ctp2.060" "$prog/ctp2.wos"
+		(cd "$stage" && lha -aq "$outdir/$mos.lha" CTP2 CTP2.info)
+	fi
 	;;
 linux)
 	cp "$1" "$prog/ctp2"

@@ -44,7 +44,8 @@ MorphOS), `C:InitPPC` before `ctp2.wos`, the screen mode (the card's 16-bit
 RTG modes of 800x600 and more, or automatic; cursor up/down move through
 them), autosave, and the ENV: settings below a player may want (language,
 sound rate, background autosave, save compression, window building, sprite
-cache, card refresh rows, card settle time, performance log). Play, Save
+cache, card refresh rows, card settle time, windows straight to the card,
+scrolling on the card, performance log). Play, Save
 (keys P, S, Q) write:
 
 - ENV:CTP2_MODE and the others; a setting at its default is deleted, so the
@@ -85,7 +86,7 @@ CTRL-C quits.
 | `CTP2_MODE` | screen mode id in hex (from the screen mode prefs); else the closest 16-bit RTG mode |
 | `CTP2_AHI_RATE` | AHI mixing rate, 8000-48000 (default 16000 on the 68060, 22050 on the PowerPC) |
 | `CTP2_LANGUAGE` | ISO 639-1 code (`en`, `de`, ...); else the Locale preferences |
-| `CTP2_UIPRELOAD` | when the main windows (build manager, city window, managers, diplomacy...) are built: `lazy` (default) at their first opening, `start` (or `preload`) while a game loads (a few seconds longer), `idle` (or `lazypreload`) one at a time on the map while the mouse and keys rest |
+| `CTP2_UIPRELOAD` | when the main windows (build manager, city window, managers, diplomacy...) are built: `idle` (default; or `lazypreload`) one at a time on the map while the mouse and keys rest, `lazy` at their first opening, `start` (or `preload`) while a game loads (a few seconds longer) |
 | `CTP2_SCRUB` | full rows sent again to the card every 80 ms, past the comparison (default 4, `0`: none) |
 | `CTP2_SCROLLSLACK` | spare pixels across round the map's surface, so that a scroll moves no memory (default 1024, about 11 MB at 1024x768; `0`: none) |
 | `CTP2_SPRITECACHE` | unit sprite groups kept fully loaded after their animations, least recently used out first (default 8; `0`: none, every move reads the sprite file twice) |
@@ -94,6 +95,9 @@ CTRL-C quits.
 | `CTP2_PROF` | `1` (68060): a sampling profiler (`2`: follow frame pointers; `CTP2_PROF_EVENT`=name: only that game event); CTRL-E (`break <process> E`) writes `RAM:ctp2prof.bin`, resolved with `host/amiga-prof.py` (see docs/performance.md) |
 | `CTP2_EFFECTCACHE` | effect sprite groups (combat flash, special effects) kept loaded after use (default 4; `0`: none, each effect reads its file again) |
 | `CTP2_DIRECTMAP` | `0`: the map goes through the composed frame, as before (default: straight from its own surface to the card) |
+| `CTP2_DIRECTWIN` | `0`: opaque windows go through the composed frame, as before (default: straight from their own surfaces to the card) |
+| `CTP2_MOVEBLIT` | `0`: a moved window is sent again whole (default: the card's blitter moves it, only the uncovered strip is written) |
+| `CTP2_CARDSCROLL` | `0`: no shifts on the card's blitter; a scrolled map is sent again instead (for displays whose blitter gets overlapping copies wrong, such as QEMU's ati-vga under MorphOS) |
 | `CTP2_STRIPWRITE` | `1`: what a scroll step uncovers goes to the card without the compare (default off) |
 | `CTP2_BENCH` | `1`: a benchmark that runs by itself on a fixed world (`CTP2_SEED`) and quits; `Bench:` lines in `ctp2.log` |
 | `CTP2_CHECK` | n: every n-th copy the card is compared with the picture, each scroll with a fresh repaint; `Check:` lines |
