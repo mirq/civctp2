@@ -707,6 +707,7 @@ bool compute_scroll_deltas(sint32 time,sint32 &deltaX,sint32 &deltaY)
 	return retval;
 }
 
+#if defined(__AUI_USE_AMIGA__)
 void amiga_test_reveal(void);   // gfx/tilesys/tiledmap.cpp
 
 static void AmigaBenchTick(void)
@@ -829,6 +830,7 @@ static void AmigaBenchTick(void)
 		break;
 	}
 }
+#endif // __AUI_USE_AMIGA__
 
 bool ui_CheckForScroll(void)
 {
