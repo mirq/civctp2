@@ -51,6 +51,7 @@
 // - When yes the debugai switch causes a crash
 // - Full city radius is now drawn around settlers. (30-Jan-2008 Martin Gühmann)
 // - Changed colour of maximum zoom grid from white to black. (12-Mar-2009 Maq)
+// - Amiga builds: a re-centred view is shifted, not painted again (AmigaShiftView).
 //
 //----------------------------------------------------------------------------
 
@@ -3530,6 +3531,141 @@ static void AmigaOpenRects(std::vector<RECT> &out, bool columns)
 #endif
 
 #if defined(__AUI_USE_AMIGA__)
+// ENV:CTP2_CHECK: at the end of a scroll the map as the steps left it is kept
+// (amiga_check_scroll_begin), and compared with the map painted anew
+// (amiga_check_scroll_end, after the next pass of the background): what the
+// steps' shifting and strip painting got wrong shows as pixels that differ.
+// (What moves on the map - units, water, goods - differs a little by itself.)
+static std::vector<uint16>  s_amigaCheckCopy;
+static std::vector<RECT>    s_amigaCheckRects;
+static sint32               s_amigaCheckW = 0;
+
+static int AmigaCheckOn(void)
+{
+	static int s_on = -1;
+	if (s_on < 0) s_on = amiga_env_flag("CTP2_CHECK") ? 1 : 0;
+	return s_on;
+}
+
+static const uint16 * AmigaBackgroundAtScreen(sint32 & pitch)
+{
+	if (!g_background || !g_background->TheSurface()
+	 || !g_background->TheSurface()->IsThisA(aui_AmigaSurface::m_AmigaSurfaceClassId)) return NULL;
+	aui_AmigaSurface * const surface = static_cast<aui_AmigaSurface *>(g_background->TheSurface());
+	if (!surface->Pixels()) return NULL;
+	pitch = surface->Pitch();
+	return reinterpret_cast<const uint16 *>(surface->Pixels() - g_background->Y() * pitch) - g_background->X();
+}
+
+void amiga_check_scroll_begin(void)
+{
+	s_amigaCheckRects.clear();
+	if (!AmigaCheckOn() || !g_c3ui) return;
+
+	sint32               pitch = 0;
+	const uint16 * const base  = AmigaBackgroundAtScreen(pitch);
+	if (!base) return;
+
+	AmigaOpenRects(s_amigaCheckRects, false);
+	s_amigaCheckW = g_c3ui->Width();
+	s_amigaCheckCopy.resize(static_cast<size_t>(s_amigaCheckW) * g_c3ui->Height());
+	for (size_t n = 0; n < s_amigaCheckRects.size(); ++n)
+	{
+		RECT const & r = s_amigaCheckRects[n];
+		for (sint32 y = r.top; y < r.bottom; ++y)
+		{
+			memcpy(&s_amigaCheckCopy[static_cast<size_t>(y) * s_amigaCheckW + r.left],
+			       base + (y * pitch >> 1) + r.left, static_cast<size_t>(r.right - r.left) * 2);
+		}
+	}
+}
+
+void amiga_check_scroll_end(void)
+{
+	if (s_amigaCheckRects.empty()) return;
+
+	sint32               pitch = 0;
+	const uint16 * const base  = AmigaBackgroundAtScreen(pitch);
+	uint32               differs = 0;
+	RECT                 where = { 0x7fff, 0x7fff, 0, 0 };
+
+	for (size_t n = 0; base && n < s_amigaCheckRects.size(); ++n)
+	{
+		RECT const & r = s_amigaCheckRects[n];
+		for (sint32 y = r.top; y < r.bottom; ++y)
+		{
+			const uint16 * const was = &s_amigaCheckCopy[static_cast<size_t>(y) * s_amigaCheckW];
+			const uint16 * const now = base + (y * pitch >> 1);
+			for (sint32 x = r.left; x < r.right; ++x)
+			{
+				if (was[x] == now[x]) continue;
+				++differs;
+				if (x < where.left)        where.left   = x;
+				if (x + 1 > where.right)   where.right  = x + 1;
+				if (y < where.top)         where.top    = y;
+				if (y + 1 > where.bottom)  where.bottom = y + 1;
+			}
+		}
+	}
+	// Where: the first few times as a picture (RAM:ctp2check<n>.ppm), the
+	// map as painted anew at a quarter of its brightness and what differs in
+	// white (was brighter before) or red (was darker).
+	static int s_pictures = 0;
+	if (differs && base && s_pictures < 3 && g_c3ui)
+	{
+		char name[40];
+		sprintf(name, "RAM:ctp2check%d.ppm", ++s_pictures);
+		FILE * f = fopen(name, "wb");
+		if (f)
+		{
+			sint32 const w = g_c3ui->Width(), h = g_c3ui->Height();
+			fprintf(f, "P6\n%ld %ld\n255\n", (long)w, (long)h);
+			std::vector<uint8> line(static_cast<size_t>(w) * 3);
+			for (sint32 y = 0; y < h; ++y)
+			{
+				memset(&line[0], 0, line.size());
+				for (size_t n = 0; n < s_amigaCheckRects.size(); ++n)
+				{
+					RECT const & r = s_amigaCheckRects[n];
+					if (y < r.top || y >= r.bottom) continue;
+					const uint16 * const was = &s_amigaCheckCopy[static_cast<size_t>(y) * s_amigaCheckW];
+					const uint16 * const now = base + (y * pitch >> 1);
+					for (sint32 x = r.left; x < r.right; ++x)
+					{
+						uint16 const p = now[x];
+						if (was[x] == p)
+						{
+							line[x * 3 + 0] = static_cast<uint8>(((p >> 11) & 0x1F) << 1);
+							line[x * 3 + 1] = static_cast<uint8>(((p >> 5) & 0x3F));
+							line[x * 3 + 2] = static_cast<uint8>((p & 0x1F) << 1);
+						}
+						else
+						{
+							bool const brighter = ((was[x] >> 5) & 0x3F) > ((p >> 5) & 0x3F);
+							line[x * 3 + 0] = 255;
+							line[x * 3 + 1] = brighter ? 255 : 0;
+							line[x * 3 + 2] = brighter ? 255 : 0;
+						}
+					}
+				}
+				fwrite(&line[0], 1, line.size(), f);
+			}
+			fclose(f);
+		}
+	}
+	s_amigaCheckRects.clear();
+
+	if (differs)
+	{
+		amiga_log("Check: after a scroll %lu pixels of the map differ from the map painted anew (%ld,%ld-%ld,%ld)\n",
+		          (unsigned long)differs, (long)where.left, (long)where.top, (long)where.right, (long)where.bottom);
+	}
+	else
+	{
+		amiga_log("Check: after a scroll the map is as painted anew\n");
+	}
+}
+
 bool TiledMap::CanScrollMap(sint32 deltaX, sint32 deltaY) const
 {
 	if (g_modalWindow) return false;
@@ -4174,6 +4310,118 @@ bool TiledMap::ScrollMap(sint32 deltaX, sint32 deltaY)
 
 	return true;
 }
+
+#if defined(__AUI_USE_AMIGA__)
+// A re-centred view (the director's CenterMap: a unit walking out of the
+// view, an enemy move shown) that overlaps the one before: the pixels of the
+// map surface are shifted, as a scroll step shifts the background's, and only
+// the tiles the shift uncovered are painted. Refresh paints every tile, hat,
+// border and improvement in view: ~200 ms on an A4000 early in a game, more
+// as the map is explored; the shift by three tiles took ~105 ms.
+sint32 TiledMap::AmigaShiftView(const RECT & before)
+{
+	if (m_surface != m_mapSurface || !SmoothScrollAligned()) return 0;
+
+	sint32 const viewW = m_mapViewRect.right  - m_mapViewRect.left;
+	sint32 const viewH = m_mapViewRect.bottom - m_mapViewRect.top;
+	if (viewW != before.right - before.left || viewH != before.bottom - before.top) return 0;   // zoomed
+
+	sint32 mapWidth, mapHeight;
+	GetMapMetrics(&mapWidth, &mapHeight);
+
+	sint32 deltaX = m_mapViewRect.left - before.left;
+	sint32 deltaY = m_mapViewRect.top  - before.top;
+	// On a world that wraps, the same view can have another position.
+	if (g_theWorld->IsXwrap() && mapWidth > 0)
+	{
+		deltaX %= mapWidth;
+		if      (deltaX >  mapWidth / 2) deltaX -= mapWidth;
+		else if (deltaX < -mapWidth / 2) deltaX += mapWidth;
+	}
+	if (g_theWorld->IsYwrap() && mapHeight > 0)
+	{
+		deltaY %= mapHeight;
+		if      (deltaY >  mapHeight / 2) deltaY -= mapHeight;
+		else if (deltaY < -mapHeight / 2) deltaY += mapHeight;
+	}
+
+	if (!deltaX && !deltaY) return -1;
+	// Odd rows are offset by half a tile: a view moved by an odd number of
+	// rows is a different picture. And when little of it stays, it is all
+	// painted anyway.
+	if (deltaY & 1) return 0;
+	if (2 * abs(deltaX) > viewW || 2 * abs(deltaY) > viewH) return 0;
+
+	sint32 const hscroll = GetZoomTilePixelWidth();
+	sint32 const vscroll = GetZoomTilePixelHeight() / 2;
+	if ((hscroll * deltaX) & 1) return 0;   // ScrollPixels moves pixel pairs
+
+	// Both shifts first: the strips are then painted where they end up.
+	if (deltaX) ScrollPixels(deltaX * hscroll, 0, m_surface);
+	if (deltaY) ScrollPixels(0, deltaY * vscroll, m_surface);
+
+	LockSurface();
+	if (deltaX) AmigaRepaintStrip(deltaX, 0);
+	if (deltaY) AmigaRepaintStrip(0, deltaY);
+	UnlockSurface();
+
+	return 1;
+}
+
+sint32 TiledMap::AmigaRefreshMoved(const RECT & before)
+{
+	sint32 const shifted = AmigaShiftView(before);
+	if (shifted == 0)
+	{
+		Refresh();
+	}
+	return shifted;
+}
+
+// The tiles a shift of the view uncovered (one axis), with a column or two
+// rows beyond them (tiles overlap their neighbours), and what is drawn over
+// the tiles one tile further in: what the neighbours draw reaches into the
+// strip and the strip's into them. The order of Refresh.
+void TiledMap::AmigaRepaintStrip(sint32 deltaX, sint32 deltaY)
+{
+	RECT tiles = m_mapViewRect;
+	RECT over  = m_mapViewRect;
+	if (deltaX > 0)
+	{
+		tiles.left = m_mapViewRect.right - deltaX - 1;
+		over.left  = tiles.left - 1;
+	}
+	else if (deltaX < 0)
+	{
+		tiles.right = m_mapViewRect.left - deltaX + 1;
+		over.right  = tiles.right + 1;
+	}
+	else if (deltaY > 0)
+	{
+		tiles.top = m_mapViewRect.bottom - deltaY - 2;
+		over.top  = tiles.top - 2;
+	}
+	else
+	{
+		tiles.bottom = m_mapViewRect.top - deltaY + 2;
+		over.bottom  = tiles.bottom + 2;
+	}
+	if (tiles.left < m_mapViewRect.left)     tiles.left   = m_mapViewRect.left;
+	if (tiles.right > m_mapViewRect.right)   tiles.right  = m_mapViewRect.right;
+	if (tiles.top < m_mapViewRect.top)       tiles.top    = m_mapViewRect.top;
+	if (tiles.bottom > m_mapViewRect.bottom) tiles.bottom = m_mapViewRect.bottom;
+	if (over.left < m_mapViewRect.left)      over.left    = m_mapViewRect.left;
+	if (over.right > m_mapViewRect.right)    over.right   = m_mapViewRect.right;
+	if (over.top < m_mapViewRect.top)        over.top     = m_mapViewRect.top;
+	if (over.bottom > m_mapViewRect.bottom)  over.bottom  = m_mapViewRect.bottom;
+
+	RepaintTiles(tiles);
+	RepaintHats(over);
+	RepaintBorders(over);
+	RepaintImprovements(over);
+	RepaintCellText(over);
+}
+#endif
 
 bool TiledMap::SmoothScrollAligned() const
 {

@@ -56,6 +56,7 @@
 // - Prevented building of gaia controller tile imp unless science victory
 //   race has started. (01-Jul-2009 Maq)
 // - Added terrainutil_GetHealRate to suppurt tileimprovement healing (24-Jul-2009 EPW)
+// - Amiga builds: removed borders out of view do not paint the map again.
 //
 //----------------------------------------------------------------------------
 
@@ -1383,6 +1384,30 @@ void terrainutil_RemoveBorders(const MapPoint &center, sint32 owner, sint32 intR
 
 	}
 
+#if defined(__AUI_USE_AMIGA__)
+	// A city taken or razed anywhere (AI wars too) painted the whole view
+	// again: ~200 ms and more on an A4000. Only the view shows borders, so
+	// when no tile of the radius, nor a neighbour (a border is drawn on both
+	// sides of its edge), is in it, there is nothing to paint.
+	if (g_tiledMap)
+	{
+		bool inView = false;
+		for (it.Start(); !it.End() && !inView; it.Next())
+		{
+			MapPoint const pos = it.Pos();
+			inView = g_tiledMap->TileIsVisible(pos.x, pos.y);
+			for (sint32 d = NORTH; d < NOWHERE && !inView; ++d)
+			{
+				MapPoint next;
+				if (pos.GetNeighborPosition(static_cast<WORLD_DIRECTION>(d), next))
+				{
+					inView = g_tiledMap->TileIsVisible(next.x, next.y);
+				}
+			}
+		}
+		if (!inView) return;
+	}
+#endif
 	g_tiledMap->Refresh();
 }
 

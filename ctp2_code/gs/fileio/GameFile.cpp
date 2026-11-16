@@ -39,6 +39,9 @@
 // - Replaced CIV_INDEX by sint32. (2-Jan-2008 Martin Gühmann)
 // - Make the Linux version loading and producing Windows compatible
 //   savegames. (16-Jan-2019 Martin Gühmann)
+// - Amiga builds: a save is compressed and written in pieces, with the
+//   cursor kept moving in between (an autosave every turn), and the
+//   autosave is compressed and written in the background.
 //
 //----------------------------------------------------------------------------
 
@@ -107,6 +110,13 @@
 #include "World.h"                  // g_theWorld
 #include "Wormhole.h"
 #include <zlib.h>
+#if defined(CTP2_AMIGA_BUILD)
+void amiga_ui_busy_tick(void);   // ui/aui_amiga/aui_amigaui.cpp
+#include "amiga_platform.h"      // amiga_env_value
+void gamefile_AmigaAsyncNext(void);
+int  gamefile_AmigaSaveStep(int budgetMs);
+void gamefile_AmigaSaveFlush(void);
+#endif
 
 #ifndef WIN32
 #include <sys/types.h>
@@ -200,6 +210,136 @@ GameFile::GameFile(void)
 {
 }
 
+#if defined(CTP2_AMIGA_BUILD)
+// The autosave in the background (ENV:CTP2_BGSAVE, default on; 0: off).
+// Save takes the snapshot of the game as before, opens the file and writes
+// its head; compressing the snapshot (~1 s for 670 KB on a 68060) and
+// writing it are left to gamefile_AmigaSaveStep, a few milliseconds each
+// frame, while the player's turn has begun already. gamefile_AmigaSaveFlush
+// finishes the file at once: before any other save or load, before the save
+// lists are read, and when the game or the program ends.
+namespace
+{
+	struct AmigaSaveJob
+	{
+		FILE *   fp;
+		uint8 *  raw;
+		size_t   rawLen;
+		size_t   rawDone;
+		z_stream strm;
+		uint8 *  out;
+		size_t   outLen;      // compressed size, once known
+		size_t   outWritten;
+		int      phase;       // 0: compressing, 1: the size, 2: the data
+	};
+
+	AmigaSaveJob * s_amigaJob        = NULL;
+	bool           s_amigaAsyncNext  = false;
+
+	void AmigaSaveEnd(bool ok)
+	{
+		AmigaSaveJob * job = s_amigaJob;
+		s_amigaJob = NULL;
+		if (!job) return;
+		deflateEnd(&job->strm);
+		if (job->fp) c3files_fclose(job->fp);
+		delete [] job->raw;
+		delete [] job->out;
+		delete job;
+		if (!ok)
+		{
+			amiga_log("Autosave: could not be written\n");
+			c3errors_ErrorDialogFromDB("SAVE_ERROR", "SAVE_FAILED_TO_SAVE");
+		}
+	}
+
+	// One piece of the work. False: nothing left (or it failed).
+	bool AmigaSavePiece()
+	{
+		AmigaSaveJob * job = s_amigaJob;
+		if (!job) return false;
+
+		if (job->phase == 0)
+		{
+			size_t const left  = job->rawLen - job->rawDone;
+			size_t const piece = (left < 8192) ? left : 8192;
+			job->strm.next_in  = job->raw + job->rawDone;
+			job->strm.avail_in = static_cast<uInt>(piece);
+			job->rawDone += piece;
+			int const zerr = deflate(&job->strm, (job->rawDone == job->rawLen) ? Z_FINISH : Z_NO_FLUSH);
+			if (zerr == Z_STREAM_END)
+			{
+				job->outLen = job->strm.total_out;
+				job->phase  = 1;
+			}
+			else if (zerr != Z_OK)
+			{
+				AmigaSaveEnd(false);
+				return false;
+			}
+			return true;
+		}
+		if (job->phase == 1)
+		{
+			uint32 const saveSize = static_cast<uint32>(job->outLen);
+			if (c3files_fwrite(&saveSize, sizeof(saveSize), 1, job->fp) != 1)
+			{
+				AmigaSaveEnd(false);
+				return false;
+			}
+			job->phase = 2;
+			return true;
+		}
+
+		size_t const left  = job->outLen - job->outWritten;
+		size_t const piece = (left < 16384) ? left : 16384;
+		if (piece && c3files_fwrite(job->out + job->outWritten, sizeof(uint8), piece, job->fp) != piece)
+		{
+			AmigaSaveEnd(false);
+			return false;
+		}
+		job->outWritten += piece;
+		if (job->outWritten == job->outLen)
+		{
+			AmigaSaveEnd(true);
+			return false;
+		}
+		return true;
+	}
+}
+
+void gamefile_AmigaAsyncNext(void)
+{
+	static int s_enabled = -1;
+	if (s_enabled < 0)
+	{
+		char value[8];
+		s_enabled = 1;
+		if (amiga_env_value("CTP2_BGSAVE", value, sizeof(value))) s_enabled = (atoi(value) != 0);
+	}
+	s_amigaAsyncNext = (s_enabled != 0);
+}
+
+int gamefile_AmigaSaveStep(int budgetMs)
+{
+	if (!s_amigaJob) return 0;
+	uint32_t const start = amiga_ticks_ms();
+	while (AmigaSavePiece())
+	{
+		if ((int)(amiga_ticks_ms() - start) >= budgetMs) return 1;
+	}
+	return s_amigaJob != NULL;
+}
+
+void gamefile_AmigaSaveFlush(void)
+{
+	while (s_amigaJob && AmigaSavePiece())
+	{
+		amiga_ui_busy_tick();
+	}
+}
+#endif
+
 static uint32 CompressData(uint8 *inbuf, size_t insize,
                            uint8 **outbuf, size_t *outsize)
 {
@@ -210,7 +350,58 @@ static uint32 CompressData(uint8 *inbuf, size_t insize,
 #if defined(CTP2_AMIGA_BUILD)
 	// The fastest level: the default one took 1.7 s of every turn's autosave
 	// on a 68060 (650 KB). The file is a little bigger and reads the same.
-	int err = compress2(*outbuf, &tsize, inbuf, static_cast<uLong>(insize), Z_BEST_SPEED);
+	// In pieces of 32 KB, the cursor moved in between: one compress2 held
+	// it for the whole of it. The same zlib stream compress2 makes, read by
+	// uncompress as before.
+	int err = Z_STREAM_ERROR;
+	{
+		z_stream strm;
+		memset(&strm, 0, sizeof(strm));
+		// ENV:CTP2_SAVELEVEL: zlib's level, 0 (stored: no compressing, a
+		// file ~7 times as large to write) to 9; default 1.
+		static int s_level = -2;
+		if (s_level == -2)
+		{
+			char value[8];
+			s_level = Z_BEST_SPEED;
+			if (amiga_env_value("CTP2_SAVELEVEL", value, sizeof(value)))
+			{
+				s_level = atoi(value);
+				if (s_level < 0) s_level = 0;
+				if (s_level > 9) s_level = 9;
+			}
+		}
+		if (deflateInit(&strm, s_level) == Z_OK)
+		{
+			uLong const bound = deflateBound(&strm, static_cast<uLong>(insize));
+			if (bound > tsize)
+			{
+				delete [] *outbuf;
+				tsize   = bound;
+				*outbuf = new uint8[tsize];
+			}
+			strm.next_out  = *outbuf;
+			strm.avail_out = static_cast<uInt>(tsize);
+
+			size_t done = 0;
+			int    zerr = Z_OK;
+			while (zerr == Z_OK)
+			{
+				size_t const piece = (insize - done < 32768) ? insize - done : 32768;
+				strm.next_in  = inbuf + done;
+				strm.avail_in = static_cast<uInt>(piece);
+				done += piece;
+				zerr  = deflate(&strm, (done == insize) ? Z_FINISH : Z_NO_FLUSH);
+				amiga_ui_busy_tick();
+			}
+			if (zerr == Z_STREAM_END)
+			{
+				tsize = strm.total_out;
+				err   = Z_OK;
+			}
+			deflateEnd(&strm);
+		}
+	}
 #else
 	int err = compress2(*outbuf, &tsize, inbuf, static_cast<uLong>(insize), Z_DEFAULT_COMPRESSION);
 #endif
@@ -225,6 +416,12 @@ uint32 GameFile::Save(const MBCHAR *filepath, SaveInfo *info)
 	clock_t start = clock();
 #endif
 
+#if defined(CTP2_AMIGA_BUILD)
+	gamefile_AmigaSaveFlush();
+	bool const amigaAsync = s_amigaAsyncNext;
+	s_amigaAsyncNext = false;
+#endif
+
 	CivArchive	archive;
 	archive.SetStore();
 
@@ -236,7 +433,13 @@ uint32 GameFile::Save(const MBCHAR *filepath, SaveInfo *info)
 
 	bool showProgress = !strstr(filepath, "AUTOSAVE");
 
+#if defined(CTP2_AMIGA_BUILD)
+	// Between the parts of a save the cursor moves on (an autosave every turn
+	// held it for 2 s on a 68060).
+#define PROGRESS(i) do { if(showProgress) { g_theProgressWindow->StartCountingTo(i); } amiga_ui_busy_tick(); } while (0)
+#else
 #define PROGRESS(i) if(showProgress) { g_theProgressWindow->StartCountingTo(i); }
+#endif
 
 	if (showProgress)
 	{
@@ -471,6 +674,29 @@ uint32 GameFile::Save(const MBCHAR *filepath, SaveInfo *info)
 
 	PROGRESS( 500 );
 
+#if defined(CTP2_AMIGA_BUILD)
+	if (amigaAsync && !showProgress)
+	{
+		// The rest in the background (above).
+		AmigaSaveJob * job = new AmigaSaveJob;
+		memset(job, 0, sizeof(*job));
+		if (deflateInit(&job->strm, Z_BEST_SPEED) == Z_OK)
+		{
+			uLong const bound = deflateBound(&job->strm, ulLen);
+			job->fp     = fpSave;
+			job->rawLen = ulLen;
+			job->raw    = new uint8[ulLen ? ulLen : 1];
+			memcpy(job->raw, archive.GetStream(), ulLen);
+			job->out    = new uint8[bound];
+			job->strm.next_out  = job->out;
+			job->strm.avail_out = static_cast<uInt>(bound);
+			s_amigaJob  = job;
+			return GAMEFILE_ERR_STORE_OK;
+		}
+		delete job;
+	}
+#endif
+
 	size_t      compressedSize = 0;
 	uint8	*   compressedData = NULL;
 
@@ -497,7 +723,20 @@ uint32 GameFile::Save(const MBCHAR *filepath, SaveInfo *info)
 
 	PROGRESS( 520 );
 
+#if defined(CTP2_AMIGA_BUILD)
+	// In pieces, the cursor moved in between (~1 MB/s to an A4000's disk).
+	n = 0;
+	while (n < compressedSize)
+	{
+		size_t const piece  = (compressedSize - n < 32768) ? compressedSize - n : 32768;
+		size_t const wrote  = c3files_fwrite(compressedData + n, sizeof(uint8), piece, fpSave);
+		n += wrote;
+		amiga_ui_busy_tick();
+		if (wrote != piece) break;
+	}
+#else
 	n = c3files_fwrite(compressedData, sizeof(uint8), compressedSize, fpSave);
+#endif
 	if (n != compressedSize)
 		{
 		c3files_fclose(fpSave);
@@ -524,6 +763,9 @@ uint32 GameFile::Save(const MBCHAR *filepath, SaveInfo *info)
 
 uint32 GameFile::Restore(const MBCHAR *filepath)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	gamefile_AmigaSaveFlush();
+#endif
 #if defined(_DEBUG) || defined(USE_LOGGING)
 	clock_t start = clock();
 #endif
@@ -1721,6 +1963,9 @@ bool GameFile::FetchExtendedSaveInfo(MBCHAR const * fullPath, SaveInfo *info)
 
 PointerList<GameInfo> *GameFile::BuildSaveList(C3SAVEDIR dir)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	gamefile_AmigaSaveFlush();
+#endif
 	PointerList<GameInfo> * list = new PointerList<GameInfo>;
 
 	MBCHAR  dirPath[_MAX_PATH];

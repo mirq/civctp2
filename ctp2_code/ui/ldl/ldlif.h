@@ -26,6 +26,11 @@ int ldlif_find_file(const char *filename, char *buf);
 int ldlif_find_localized_file(const char *filename, char *buf);
 
 char *ldlif_getnameptr(const char *name);
+#if defined(CTP2_AMIGA_BUILD)
+// The stored name for name, ignoring ASCII case, or NULL when there is none
+// (a name no block has: nothing is stored for it).
+char *ldlif_findnameptr(const char *name);
+#endif
 char *ldlif_getstringptr(const char *text);
 
 int ldlif_parse(const char *filename);

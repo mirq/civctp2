@@ -25,6 +25,9 @@ extern "C" {
  * current directory. Returns 0 and logs the reason when one is missing. */
 int  amiga_platform_init(void);
 void amiga_platform_exit(void);
+#if defined(CTP2_AMIGA_WOS)
+void amiga_exit_skip_destructors(void);
+#endif
 
 /* Exits through the game's normal cleanup after CTRL-C or a window close. */
 int  amiga_break_requested(void);
@@ -33,6 +36,14 @@ int  amiga_break_requested(void);
  * composes to RAM:ctp2shot.ppm (the screen is 16-bit RTG, which most
  * screen grabbers do not read). */
 int  amiga_snapshot_requested(void);
+/* The same without taking the request (the UI makes a copy for it then). */
+int  amiga_snapshot_pending(void);
+/* The game asks for one itself (a benchmark), written to path: only the
+ * picture then, not the card and the shadow. amiga_snapshot_path is NULL for
+ * a CTRL-F one; amiga_snapshot_done forgets the path. */
+void amiga_snapshot_request(const char *path);
+const char *amiga_snapshot_path(void);
+void amiga_snapshot_done(void);
 
 /* ENV:name into value (size bytes); 0 when it is not set. (The C library's
  * getenv does not read ENV: here.) */
@@ -193,6 +204,17 @@ int  amiga_video_shift_pending(void);
  * next full copy (the frame it copies from is the one before them). */
 void amiga_video_cursor_only(int on);
 
+/* ENV:CTP2_PROF (68060): a sampling profiler (amiga_prof.c). Started and
+ * stopped with the platform; amiga_prof_poll, from the main loop, writes the
+ * samples to RAM:ctp2prof.bin on CTRL-E. */
+void amiga_prof_start(void);
+void amiga_prof_poll(void);
+void amiga_prof_stop(void);
+/* 0: not sampled now (ENV:CTP2_PROF_EVENT, set around game events). */
+extern volatile int amiga_prof_gate;
+/* The game event being processed (-1: none), kept with each sample. */
+extern volatile int amiga_prof_tag;
+
 /* What the copies cost since the last call (pixels, microseconds, calls), for
  * the ENV:CTP2_PERF log; the counters start again at zero. */
 void amiga_video_stats(uint32_t *pixels, uint32_t *us, uint32_t *calls);
@@ -201,6 +223,13 @@ void amiga_video_stats(uint32_t *pixels, uint32_t *us, uint32_t *calls);
  * (The system pointer is no option: Picasso96's sprite is 16 pixels wide
  * and 3 colours on AmigaOS 3, the game's cursors 48x48 in 16 bits.) */
 void amiga_video_hide_pointer(void);
+
+/* ENV:CTP2_CHECK: the card read back and compared with picture (the whole
+ * picture as it should be, pitch in bytes), and the shadow with it too.
+ * Returns 0 when it cannot (no lock, a 15-bit screen); else 1, with how many
+ * pixels differ and the rectangle round those of the card. */
+int amiga_video_check(const uint16_t *picture, int pitch,
+                      uint32_t *cardDiffers, uint32_t *shadowDiffers, AmigaRect *where);
 
 /* Writes what the card shows of the picture to a PPM (the CTRL-F snapshot's
  * check that the copies and shifts left nothing stale). Returns 1 if done. */

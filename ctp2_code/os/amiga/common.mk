@@ -55,6 +55,7 @@ AMIGA_PLATFORM_SRCS := \
 	os/amiga/amiga_platform.c \
 	os/amiga/amiga_clock.c \
 	os/amiga/amiga_log.c \
+	os/amiga/amiga_prof.c \
 	os/amiga/amiga_video.c \
 	os/amiga/amiga_input.c \
 	os/amiga/amiga_audio.c \

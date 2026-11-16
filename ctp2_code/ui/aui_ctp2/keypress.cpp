@@ -36,6 +36,7 @@
 //   anymore like the other tabs. - Aug 7th 2005 Martin Gühmann
 // - Strongly modal windows like the DipWizzard cannot closed anymore by
 //   by keypresses that open other windows. (20-10-2007 Martin Gühmann)
+// - Amiga builds: centring the map shifts the part of the view that stays.
 //
 //----------------------------------------------------------------------------
 
@@ -763,18 +764,38 @@ sint32 ui_HandleKeypress(WPARAM wParam, LPARAM lParam)
 			{
 				Army army(s_item);
 				army.GetPos(pos);
+#if defined(__AUI_USE_AMIGA__)
+				{
+					RECT const before = g_tiledMap->GetMapViewRect();
+					g_radarMap->CenterMap(pos);
+					if (g_tiledMap->AmigaRefreshMoved(before) >= 0) {
+						g_tiledMap->InvalidateMap();
+					}
+				}
+#else
 				g_radarMap->CenterMap(pos);
 				g_tiledMap->Refresh();
 				g_tiledMap->InvalidateMap();
+#endif
 				break;
 			}
 			case SELECT_TYPE_LOCAL_CITY:
 			{
 				Unit unit(s_item);
 				unit.GetPos(pos);
+#if defined(__AUI_USE_AMIGA__)
+				{
+					RECT const before = g_tiledMap->GetMapViewRect();
+					g_radarMap->CenterMap(pos);
+					if (g_tiledMap->AmigaRefreshMoved(before) >= 0) {
+						g_tiledMap->InvalidateMap();
+					}
+				}
+#else
 				g_radarMap->CenterMap(pos);
 				g_tiledMap->Refresh();
 				g_tiledMap->InvalidateMap();
+#endif
 
 				break;
 			}

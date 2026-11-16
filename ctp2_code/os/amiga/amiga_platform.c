@@ -97,6 +97,7 @@ int amiga_platform_init(void)
 
 	amiga_perf = amiga_env_flag("CTP2_PERF");
 	s_inited = 1;
+	amiga_prof_start();
 
 	amiga_log("Call to Power II for AmigaOS (%s), started\n",
 #if defined(CTP2_AMIGA_WOS)
@@ -113,6 +114,7 @@ int amiga_platform_init(void)
 
 void amiga_platform_exit(void)
 {
+	amiga_prof_stop();
 	amiga_audio_close();
 	amiga_video_close();
 	amiga_log_exit();
@@ -205,12 +207,72 @@ ADD2EXIT(amiga_exit_destructors_begin, -4);
 ADD2EXIT(amiga_exit_platform_close, -20);
 #endif
 
+#if defined(CTP2_AMIGA_WOS)
+/* WarpOS: main() returns into startupwos.o's _exit, which first calls every
+ * entry of .dtors (__dtrslist, os/amiga/warpos/warpos-etrel.ld) and only then
+ * its exit list. The game's C++ static destructors are not run, as on the
+ * 68060 (above): Network::~Network on g_network never ended on a real A4000
+ * with a Sonnet either, and the program hung after "CTRL-C: quitting". Every
+ * entry but amiga_malloc_close (which gives the heap back, last in the list)
+ * is replaced with an empty function. Called before main() returns and from
+ * the atexit list, for an exit() from elsewhere. ENV:CTP2_DTORS runs them. */
+extern void (*__dtrslist[])(void);
+void amiga_malloc_close(void);
+
+static void no_destructor_wos(void)
+{
+}
+
+void amiga_exit_skip_destructors(void)
+{
+	static int s_done;
+	void (**d)(void);
+	int run;
+
+	if (s_done) return;
+	s_done = 1;
+
+	run = s_inited && amiga_env_flag("CTP2_DTORS");
+	if (s_inited) amiga_log(run ? "Exit: C++ destructors\n" : "Exit: C++ destructors skipped\n");
+	if (run) return;
+
+	for (d = __dtrslist; *d; ++d)
+	{
+		if (*d != amiga_malloc_close) *d = no_destructor_wos;
+	}
+}
+#endif
+
 int      amiga_perf;
 uint32_t amiga_perf_us[AMIGA_PERF_SLOTS];
 
 int amiga_snapshot_requested(void)
 {
 	return (SetSignal(0, SIGBREAKF_CTRL_F) & SIGBREAKF_CTRL_F) != 0;
+}
+
+int amiga_snapshot_pending(void)
+{
+	return (SetSignal(0, 0) & SIGBREAKF_CTRL_F) != 0;
+}
+
+static char s_snapshotPath[64];
+
+void amiga_snapshot_request(const char *path)
+{
+	strncpy(s_snapshotPath, path ? path : "", sizeof(s_snapshotPath) - 1);
+	s_snapshotPath[sizeof(s_snapshotPath) - 1] = '\0';
+	SetSignal(SIGBREAKF_CTRL_F, SIGBREAKF_CTRL_F);
+}
+
+const char *amiga_snapshot_path(void)
+{
+	return s_snapshotPath[0] ? s_snapshotPath : NULL;
+}
+
+void amiga_snapshot_done(void)
+{
+	s_snapshotPath[0] = '\0';
 }
 
 unsigned long amiga_avail_fast(void)

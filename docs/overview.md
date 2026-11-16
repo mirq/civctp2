@@ -76,8 +76,14 @@ libnix `getenv()` does not read `ENV:`. The code uses `amiga_env_value` /
 | `CTP2_UIPRELOAD` | when the main windows are built: `lazy` (default, on first open), `start` (while a game loads, ~19 s more), `idle` (one at a time while input is idle) |
 | `CTP2_SCRUB` | full rows re-sent to the card every 80 ms, past the diff (default 4, `0` = off) |
 | `CTP2_SCROLLSLACK` | spare pixels across round the map surface, so that a scroll moves no memory (default 1024, rows are half; about 11 MB at 1024×768; `0` = off) |
+| `CTP2_SPRITECACHE` | unit sprite groups kept fully loaded after their animations, least recently used out first (default 8; `0` = off: each move reads the unit's sprite file before and after its animation) |
+| `CTP2_EFFECTCACHE` | effect sprite groups (combat flash, special effects; some files are 0.7–2 MB) kept loaded after use (default 4; `0` = off) |
 | `CTP2_DIRECTMAP` | `0`: the map is copied into the composed frame first, as before (default: the card gets it straight from the map's surface) |
 | `CTP2_STRIPWRITE` | `1`: what a scroll step uncovers goes to the card without the compare (default off; worth it only where writing a pixel costs little more than comparing one) |
+| `CTP2_BENCH` | `1`: a benchmark that runs by itself on a fixed world and quits; times as `Bench:` lines in `ctp2.log` (see [testing.md](testing.md)) |
+| `CTP2_SEED` | the seed of the world, so that the quick start makes the same one every time |
+| `CTP2_CHECK` | n: every n-th copy the card is read back and compared with the picture, and each scroll's result with a fresh repaint; differences go to `ctp2.log` |
+| `CTP2_SOLIDROWS` | `0`: tiles are painted pixel by pixel as before (default: rows without a transition are copied whole) |
 | `CTP2_TEST` | `1`: F9 explores the whole map, for display checks |
 | `CTP2_PERF` | `1`: per-phase frame timings, copy statistics, slow events, the "Big present" callers and the cursor wait, every 3 s in `ctp2.log` |
 | `CTP2_LOGSYNC` | writes `ctp2.log` line by line, for hangs and for load-step timing |
@@ -122,6 +128,29 @@ struct layouts when reading files.
 - Many sources are ISO-8859-1 with CRLF line endings. Keep both.
 - Skip static destructors on the 68k: `Network::~Network` hung at exit.
   `amiga_platform_exit` runs from libnix's exit list.
+
+## Building with gcc 16
+
+The 68060 build also works with m68k-amigaos-gcc 16.2 (7–15% faster
+scrolling, about 17% faster game load on the benchmark). gcc 6.5 stays the
+default. What it needs:
+
+```sh
+make -f Makefile.amiga68k -j$(nproc) PREFIX=<gcc16 prefix> \
+  OBJDIR=build/amiga68k-gcc16 TARGET=bin/amiga/ctp2gcc16.060 \
+  OPT_FLAGS="-O2 -fomit-frame-pointer" \
+  EXTRA_CFLAGS="-idirafter $PWD/build/gcc16-include -DZ_HAVE_UNISTD_H" \
+  EXTRA_CXXFLAGS="-idirafter $PWD/build/gcc16-include"
+```
+
+- Its NDK has no AHI headers: copy `devices/ahi.h`, `clib/ahi_protos.h` and
+  `defines/ahi.h` from the gcc 6.5 toolchain's `ndk-include` into
+  `build/gcc16-include` (same sub-folders).
+- zlib's `gz*.c` call `read`/`write`/`lseek`/`close` without a prototype,
+  an error since gcc 14: `-DZ_HAVE_UNISTD_H`.
+- `int32_t` is a `long` there, so the game's `sint32`/`uint32` are plain
+  `int` on Amiga builds (`os/include/ctp2_inttypes.h`).
+- The gcc 6.5 workaround flags (`-fno-peephole2 -fbbb=-`) are left out.
 
 ## WarpOS specifics
 

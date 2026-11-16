@@ -283,6 +283,14 @@ public:
 #if defined(__AUI_USE_AMIGA__)
 	// Whether ScrollMap would move the map at all (not at the map's edge).
 	bool			CanScrollMap(sint32 deltaX, sint32 deltaY) const;
+	// After the view moved from before (a re-centre): the map surface
+	// shifted and only what that uncovered painted. 1: done, -1: the view
+	// did not move, 0: not possible (Refresh paints it all).
+	sint32			AmigaShiftView(const RECT & before);
+	void			AmigaRepaintStrip(sint32 deltaX, sint32 deltaY);
+	// What a re-centre paints instead of Refresh: the shift, else Refresh.
+	// -1: the view did not move, nothing painted.
+	sint32			AmigaRefreshMoved(const RECT & before);
 #endif
 	bool			ScrollMapSmooth(sint32 deltaX, sint32 deltaY);
 	bool			SmoothScrollAligned() const;

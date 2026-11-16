@@ -103,6 +103,14 @@ public:
 	BOOL	Read(FILE *file);
 	BOOL	QuickRead(uint8 **dataPtr, BOOL mapped);
 	BOOL	WasQuickLoaded(void) { return m_flags & k_BTF_QUICKLOADED; }
+
+#if defined(CTP2_AMIGA_BUILD)
+	// Which rows of the tile hold no transition marker (bit y of the two
+	// words: row y): those are copied whole, without a test per pixel
+	// (tiledraw.cpp works them out at the tile's first use).
+	uint32	m_amigaSolidRows[2];
+	bool	m_amigaSolidKnown;
+#endif
 private:
 
 	uint8		m_flags;

@@ -449,8 +449,33 @@ GAME_EVENT_ERR GameEventManager::ProcessHead()
             ));
 
 #if defined(__AUI_USE_AMIGA__)
+	// ENV:CTP2_PROF_EVENT (with ENV:CTP2_PROF): the profiler samples only
+	// while the event of that name is processed.
+	static sint32 s_profEvent = -2;
+	if (s_profEvent == -2)
+	{
+		char name[64];
+		s_profEvent = -1;
+		if (amiga_env_value("CTP2_PROF_EVENT", name, sizeof(name)))
+		{
+			for (sint32 e = 0; e < GEV_MAX; ++e)
+			{
+				if (g_eventDescriptions[e].name && stricmp(g_eventDescriptions[e].name, name) == 0)
+				{
+					s_profEvent = e;
+					break;
+				}
+			}
+			amiga_log("Prof: sampling only event %s (%ld)\n", name, (long)s_profEvent);
+		}
+	}
+	if (s_profEvent >= 0) amiga_prof_gate = (m_processingEvent == s_profEvent);
+	amiga_prof_tag = m_processingEvent;
 	AMIGA_PERF_BEGIN(perfEvent);
 	GAME_EVENT_ERR  err     = event->Process();
+	// Between events: -2 while it is another player's turn, else -1.
+	amiga_prof_tag = (g_selected_item && g_selected_item->GetCurPlayer() != g_selected_item->GetVisiblePlayer()) ? -2 : -1;
+	if (s_profEvent >= 0) amiga_prof_gate = 0;
 	if (amiga_perf)
 	{
 		// ENV:CTP2_PERF: the events that hold the game up.

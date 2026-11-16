@@ -10,6 +10,7 @@
  * leading ".." becomes "/", and a volume ("Work:") stays. Case needs nothing:
  * AmigaDOS file systems ignore it.
  */
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -351,3 +352,141 @@ int ctp2_closedir(DIR *dir)
 	free(dir);
 	return 0;
 }
+
+/* ---- Case-insensitive compares and memcpy (68060) ----------------------------
+ * libnix's stricmp/strcasecmp and strnicmp/strncasecmp are utility.library's
+ * Stricmp/Strnicmp: a library call per compare, locale-aware per character
+ * (with locale.library). The game compares names all the time (layout
+ * attributes, data blocks, resources): in a profile of the city window's
+ * first opening they and their callers were among the top entries. Windows'
+ * stricmp in the C locale, which the game was written against, folds ASCII
+ * only, as these do. libnix's memcpy is exec's CopyMem whatever the size;
+ * small copies (most of them: file reads byte by byte through stdio, lists)
+ * are done here, large ones still go to CopyMem. */
+#if defined(CTP2_AMIGA_060)
+
+static inline int ascii_lower(int c)
+{
+	return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
+}
+
+int strcasecmp(const char *s1, const char *s2)
+{
+	const unsigned char *a = (const unsigned char *)s1;
+	const unsigned char *b = (const unsigned char *)s2;
+	for (;; ++a, ++b)
+	{
+		int const ca = ascii_lower(*a);
+		int const cb = ascii_lower(*b);
+		if (ca != cb || !ca) return ca - cb;
+	}
+}
+
+int strncasecmp(const char *s1, const char *s2, size_t n)
+{
+	const unsigned char *a = (const unsigned char *)s1;
+	const unsigned char *b = (const unsigned char *)s2;
+	for (; n; --n, ++a, ++b)
+	{
+		int const ca = ascii_lower(*a);
+		int const cb = ascii_lower(*b);
+		if (ca != cb || !ca) return ca - cb;
+	}
+	return 0;
+}
+
+int stricmp(const char *s1, const char *s2)                { return strcasecmp(s1, s2); }
+int strnicmp(const char *s1, const char *s2, size_t n)     { return strncasecmp(s1, s2, n); }
+
+/* No loop here may become a call to memcpy itself (as calloc once did). */
+__attribute__((optimize("no-tree-loop-distribute-patterns")))
+void *memcpy(void *dst, const void *src, size_t n)
+{
+	if (n >= 256)
+	{
+		CopyMem((APTR)src, dst, n);
+		return dst;
+	}
+	unsigned char *       d = (unsigned char *)dst;
+	unsigned char const * s = (unsigned char const *)src;
+	if (!(((uintptr_t)d | (uintptr_t)s) & 3))
+	{
+		for (; n >= 4; n -= 4, d += 4, s += 4) *(uint32_t *)d = *(uint32_t const *)s;
+	}
+	while (n--) *d++ = *s++;
+	return dst;
+}
+
+/* sprintf for the formats the game builds names with ("%s%d%d", "%s.%s",
+ * "%d"): literal text, %s, %d/%i, %u and %%, written straight out. Anything
+ * else (widths, precision, %x, %f...) goes to libnix's vsprintf as before.
+ * libnix formats in two passes (__vfprintf_total_size first); building the
+ * city window's controls spent a fifth of its time in sprintf on a 68060. */
+static char *put_unsigned(char *o, unsigned int v)
+{
+	char tmp[12];
+	int  n = 0;
+	do { tmp[n++] = (char)('0' + v % 10u); v /= 10u; } while (v);
+	while (n) *o++ = tmp[--n];
+	return o;
+}
+
+int sprintf(char *buf, const char *fmt, ...)
+{
+	va_list     ap;
+	char *      o = buf;
+	const char *f = fmt;
+
+	va_start(ap, fmt);
+	for (;;)
+	{
+		char c = *f++;
+		if (c != '%')
+		{
+			*o++ = c;
+			if (!c) break;
+			continue;
+		}
+		c = *f++;
+		if (c == 's')
+		{
+			const char *str = va_arg(ap, const char *);
+			if (!str) str = "(null)";
+			while (*str) *o++ = *str++;
+		}
+		else if (c == 'd' || c == 'i')
+		{
+			int const v = va_arg(ap, int);
+			if (v < 0)
+			{
+				*o++ = '-';
+				o = put_unsigned(o, 0u - (unsigned int)v);
+			}
+			else
+			{
+				o = put_unsigned(o, (unsigned int)v);
+			}
+		}
+		else if (c == 'u')
+		{
+			o = put_unsigned(o, va_arg(ap, unsigned int));
+		}
+		else if (c == '%')
+		{
+			*o++ = '%';
+		}
+		else
+		{
+			int n;
+			va_end(ap);
+			va_start(ap, fmt);
+			n = vsprintf(buf, fmt, ap);
+			va_end(ap);
+			return n;
+		}
+	}
+	va_end(ap);
+	return (int)(o - buf - 1);
+}
+
+#endif

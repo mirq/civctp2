@@ -123,7 +123,15 @@ ldl_attribute *ldl_datablock::GetLastAttribute( void )
 
 ldl_attribute *ldl_datablock::GetAttribute( const char *szName )
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// Only looked up, not stored: a name that is not stored is no block's
+	// attribute (the controls ask for a dozen names per image slot, most of
+	// them absent), and stores nothing new.
+	char * strPtr = ldlif_findnameptr(szName);
+	if (!strPtr) return NULL;
+#else
 	char * strPtr = ldlif_getnameptr(szName);
+#endif
 
 	for
 	(
@@ -143,6 +151,10 @@ ldl_attribute *ldl_datablock::GetAttribute( const char *szName )
 
 int ldl_datablock::GetAttributeType(const char *szName)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	ldl_attribute * found = GetAttribute(szName);
+	return found ? found->GetType() : 0;
+#else
 	ldl_attribute *atr;
 
 	char *strPtr = ldlif_getnameptr(szName);
@@ -154,6 +166,7 @@ int ldl_datablock::GetAttributeType(const char *szName)
 	}
 
 	return 0;
+#endif
 }
 
 void ldl_datablock::Dump(sint32 indent) {

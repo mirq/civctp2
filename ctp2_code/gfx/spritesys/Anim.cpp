@@ -23,6 +23,7 @@
 // Modifications from the original Activision code:
 //
 // - Fixed Destructor to fix some memory leaks, by Martin Gühmann.
+// - Amiga builds: MakeBasic.
 //
 //----------------------------------------------------------------------------
 
@@ -134,6 +135,18 @@ Anim::Anim(Anim const & copy)
 		std::copy(copy.m_moveDeltas, copy.m_moveDeltas + m_numFrames, m_moveDeltas);
 	}
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+void Anim::MakeBasic()
+{
+	if (m_numFrames <= 1) return;
+
+	m_playbackTime = m_playbackTime / m_numFrames;
+	m_numFrames    = 1;
+	m_frames[0]    = 0;
+	m_animPos      = 0;
+}
+#endif
 
 Anim::~Anim()
 {

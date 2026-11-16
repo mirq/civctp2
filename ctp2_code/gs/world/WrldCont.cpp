@@ -26,6 +26,7 @@
 //
 // - Initialized local variables. (Sep 9th 2005 Martin Gühmann)
 // - Added note about my continent error. Having terrain that was Air only caused it.
+// - Amiga builds: the cursor moves on while the continents are numbered.
 //
 //----------------------------------------------------------------------------
 
@@ -38,6 +39,9 @@
 #include "mapanalysis.h"
 #include "MoveFlags.h"
 #include "Unit.h"
+#if defined(__AUI_USE_AMIGA__)
+void amiga_ui_busy_tick(void);   // ui/aui_amiga/aui_amigaui.cpp: the cursor
+#endif
 
 #define WATER_CONTINENT_START 0
 #define LAND_CONTINENT_START 16000
@@ -105,6 +109,9 @@ void World::GrowOceans()
     MapPoint p;
 
     for (p.x = 0; p.x <m_size.x; p.x++) {
+#if defined(__AUI_USE_AMIGA__)
+        amiga_ui_busy_tick();   // the cursor moves on (each new city renumbers)
+#endif
         for (p.y = 0; p.y <m_size.y; p.y++) {
 
             if (IsNewWater(p)) {
@@ -228,6 +235,9 @@ void World::GrowContinents()
     MapPoint p;
 
     for (p.x = 0; p.x <m_size.x; p.x++) {
+#if defined(__AUI_USE_AMIGA__)
+        amiga_ui_busy_tick();   // the cursor moves on (each new city renumbers)
+#endif
         for (p.y = 0; p.y <m_size.y; p.y++) {
             if (IsNewLand(p)) {
                 GrowLand(p);
@@ -432,6 +442,9 @@ void World::FindContinentNeighbors()
     AllocateNeighborMem();
 
     for(center.x=0; center.x<m_size.x; center.x++) {
+#if defined(__AUI_USE_AMIGA__)
+        amiga_ui_busy_tick();   // the cursor moves on (each new city renumbers)
+#endif
         for(center.y=0; center.y<m_size.y; center.y++) {
 
             GetContinent(center, center_cont, is_land);

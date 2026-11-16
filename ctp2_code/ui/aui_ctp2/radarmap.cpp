@@ -42,6 +42,9 @@
 // - Initialized local variables. (Sep 9th 2005 Martin Gühmann)
 // - Added political map functionality (6-Jul-2009 EPW)
 // - Added View capitol on minimap (5-Jan-10 EPW)
+// - Amiga builds: a centring that leaves the view where it was does not
+//   render the whole radar map again.
+// - Amiga builds: a click that moves the view a little shifts the map.
 //----------------------------------------------------------------------------
 
 #include "c3.h"
@@ -2251,10 +2254,25 @@ MapPoint RadarMap::CenterMap(const MapPoint & pos)
 	m_lastCenteredPoint = pos;
 
 	RECT mapViewRect = g_tiledMap->GetMapViewRect();
+#if defined(CTP2_AMIGA_BUILD)
+	RECT const before = mapViewRect;
+#endif
 	ComputeCenteredMap(pos, &mapViewRect);
 	g_tiledMap->UpdateAndClipMapViewRect(mapViewRect);
 	m_mapViewRect = g_tiledMap->GetMapViewRect();
 
+#if defined(CTP2_AMIGA_BUILD)
+	// The picture does not depend on the view (its rectangle is drawn over
+	// it with each draw, RenderViewRect), and the tiles that change are
+	// drawn again one by one (RedrawTile). A unit selected in view is
+	// centred on without the view moving, and the whole render took ~190 ms
+	// on an A4000.
+	if (before.left == m_mapViewRect.left && before.top == m_mapViewRect.top
+	 && before.right == m_mapViewRect.right && before.bottom == m_mapViewRect.bottom)
+	{
+		return lastPoint;
+	}
+#endif
 	RenderMap(m_mapSurface);
 
 	return lastPoint;
@@ -2402,6 +2420,11 @@ void RadarMap::MouseLGrabInside(aui_MouseEvent * data)
 		return;
 	}
 
+#if defined(__AUI_USE_AMIGA__)
+	// The surface shows the view before only without smooth scroll offsets.
+	bool const shiftable  = g_tiledMap->SmoothScrollAligned();
+	RECT const viewBefore = g_tiledMap->GetMapViewRect();
+#endif
 	g_tiledMap->SetSmoothScrollOffsets(0,0);
 
 	sint32 mapWidth, mapHeight;
@@ -2425,8 +2448,21 @@ void RadarMap::MouseLGrabInside(aui_MouseEvent * data)
 	g_tiledMap->UpdateAndClipMapViewRect(m_mapViewRect);
 	m_mapViewRect = g_tiledMap->GetMapViewRect();
 
+#if defined(__AUI_USE_AMIGA__)
+	// A click near the view shifts what stays (TiledMap::AmigaShiftView).
+	if (!shiftable)
+	{
+		g_tiledMap->Refresh();
+		g_tiledMap->InvalidateMap();
+	}
+	else if (g_tiledMap->AmigaRefreshMoved(viewBefore) >= 0)
+	{
+		g_tiledMap->InvalidateMap();
+	}
+#else
 	g_tiledMap->Refresh();
 	g_tiledMap->InvalidateMap();
+#endif
 }
 
 //---------------------------------------------------------------------------

@@ -664,7 +664,7 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 		}
 	}
 
-	if (!m_presentAll && m_present.empty() && !cursorMoved)
+	if (!m_presentAll && m_present.empty() && !cursorMoved && !amiga_snapshot_pending())
 	{
 		return AUI_ERRCODE_OK;
 	}
@@ -813,11 +813,66 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 	m_presentAll    = false;
 	m_cursorChanged = false;
 
+	// ENV:CTP2_CHECK=n: after every n-th copy the card is read back and
+	// compared with the picture as it should be now (the frame, and the
+	// map's own surface where it is open; the cursor is in both). What
+	// differs is logged: a copy, a shift or the shadow went wrong.
+	{
+		static sint32               s_every = -1;
+		static sint32               s_count = 0, s_checked = 0, s_bad = 0;
+		static std::vector<uint16>  s_picture;
+		if (s_every < 0)
+		{
+			char value[16];
+			s_every = 0;
+			if (amiga_env_value("CTP2_CHECK", value, sizeof(value))) s_every = atoi(value);
+			if (s_every < 0) s_every = 0;
+		}
+		if (s_every > 0 && !m_busyTick && ++s_count >= s_every)
+		{
+			s_count = 0;
+			s_picture.resize(static_cast<size_t>(m_width) * m_height);
+			for (sint32 y = 0; y < m_height; ++y)
+			{
+				uint16 * const row = &s_picture[static_cast<size_t>(y) * m_width];
+				memcpy(row, frame + (y * pitch >> 1), static_cast<size_t>(m_width) * 2);
+				for (size_t o = 0; direct && o < m_open.size(); ++o)
+				{
+					RECT const & r = m_open[o];
+					if (y < r.top || y >= r.bottom) continue;
+					memcpy(row + r.left, mapBase + (y * mapPitch >> 1) + r.left,
+					       static_cast<size_t>(r.right - r.left) * 2);
+				}
+			}
+
+			uint32_t  cardDiffers = 0, shadowDiffers = 0;
+			AmigaRect where;
+			if (amiga_video_check(&s_picture[0], m_width * 2, &cardDiffers, &shadowDiffers, &where))
+			{
+				++s_checked;
+				if (cardDiffers || shadowDiffers)
+				{
+					++s_bad;
+					amiga_log("Check: the card differs from the picture in %lu pixels (%ld,%ld-%ld,%ld), the shadow in %lu\n",
+					          (unsigned long)cardDiffers, (long)where.left, (long)where.top,
+					          (long)where.right, (long)where.bottom, (unsigned long)shadowDiffers);
+				}
+				if ((s_checked & 63) == 0)
+				{
+					amiga_log("Check: %ld copies checked, %ld with differences\n", (long)s_checked, (long)s_bad);
+				}
+			}
+		}
+	}
+
+	amiga_prof_poll();
+
 	if (amiga_snapshot_requested())
 	{
 		// The picture as it should be on the card, cursor included, as a
 		// PPM: the frame, and the map's own surface where it is open.
-		FILE * f = fopen("RAM:ctp2shot.ppm", "wb");
+		const char * const asked = amiga_snapshot_path();   // a benchmark's own
+		FILE * f = fopen(asked ? asked : "RAM:ctp2shot.ppm", "wb");
 		if (f)
 		{
 			fprintf(f, "P6\n%ld %ld\n255\n", (long)m_width, (long)m_height);
@@ -846,6 +901,12 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 				fwrite(&line[0], 1, line.size(), f);
 			}
 			fclose(f);
+			if (asked)
+			{
+				amiga_log("Snapshot: %s\n", asked);
+				amiga_snapshot_done();
+				goto snapshot_done;
+			}
 			amiga_log("Snapshot: RAM:ctp2shot.ppm\n");
 
 			// With it, how the screen is put together: the windows, and
@@ -869,6 +930,7 @@ AUI_ERRCODE aui_AmigaUI::AmigaDrawScreen( void )
 				amiga_log("Snapshot: the card in RAM:ctp2card.ppm\n");
 		}
 	}
+snapshot_done:
 
 	if (drawn)
 	{
@@ -1178,9 +1240,27 @@ void aui_AmigaUI::ScrollFrame(sint32 x, sint32 y, sint32 w, sint32 h, sint32 dx,
 	}
 }
 
-// Called by the game event manager between events (GameEventManager.cpp).
+// Called by the game event manager between events (GameEventManager.cpp),
+// and from long loops (the AI, pathing, saving). Reading the clock each time
+// (BusyTick's 20 ms test) cost more than the work between calls in the AI's
+// tightest loops: the clock is read every n-th call only, n doubling (up to
+// 64) while the reads come less than 2 ms apart, halving when they come more
+// than 10 ms apart and back to 1 after a gap of more than 20 ms.
 void amiga_ui_busy_tick(void)
 {
+	static uint32 s_calls = 0;
+	static uint32 s_every = 1;
+	static uint32 s_lastMs = 0;
+	if (++s_calls < s_every) return;
+	s_calls = 0;
+
+	uint32 const now = amiga_ticks_ms();
+	uint32 const gap = now - s_lastMs;
+	s_lastMs = now;
+	if (gap > 20)                   s_every = 1;
+	else if (gap < 2 && s_every < 64) s_every *= 2;
+	else if (gap > 10 && s_every > 1) s_every /= 2;
+
 	s_lookSite = (uintptr_t)__builtin_return_address(0);
 	if (g_ui) static_cast<aui_AmigaUI *>(g_ui)->BusyTick();
 }

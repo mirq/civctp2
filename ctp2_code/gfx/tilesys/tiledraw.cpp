@@ -74,6 +74,10 @@
 #if !defined(__AUI_USE_AMIGA__)
 #include "aui_sdlsurface.h"
 #endif
+#if defined(CTP2_AMIGA_BUILD)
+#include <stdlib.h>
+#include "amiga_platform.h"     // ENV:CTP2_SOLIDROWS
+#endif
 #include "aui_bitmapfont.h"
 #include "ConstRecord.h"			// g_theConstDB
 #include "pixelutils.h"
@@ -166,6 +170,102 @@ namespace
                ? 2 * ((k_TILE_PIXEL_HEADROOM - 1) - a_Position)
                : 2 * (a_Position - k_TILE_PIXEL_HEADROOM);
     }
+
+#if defined(CTP2_AMIGA_BUILD)
+    // A tile's rows without a transition marker (a pixel below
+    // k_NUM_TRANSITIONS), worked out once: most rows of most tiles, and a
+    // row without one is a plain copy where the general loop tests every
+    // pixel (about 0.3 us a pixel on a 68060, three times a copy).
+    // ENV:CTP2_SOLIDROWS=0: every row pixel by pixel, as before (to compare).
+    inline bool AmigaSolidRowsOn()
+    {
+        static int s_on = -1;
+        if (s_on < 0)
+        {
+            char value[8];
+            s_on = 1;
+            if (amiga_env_value("CTP2_SOLIDROWS", value, sizeof(value))) s_on = atoi(value) != 0;
+        }
+        return s_on != 0;
+    }
+
+    inline const uint32 * AmigaSolidRows(BaseTile * a_Tile)
+    {
+        static const uint32 s_none[2] = { 0, 0 };
+        if (!AmigaSolidRowsOn()) return s_none;
+
+        if (!a_Tile->m_amigaSolidKnown)
+        {
+            const Pixel16 * p = a_Tile->GetTileData();
+            uint32          rows[2] = { 0, 0 };
+            for (int y = 0; p && y < k_TILE_PIXEL_HEIGHT; ++y)
+            {
+                int const   n     = k_TILE_PIXEL_WIDTH - 2 * StartPixel(y);
+                bool        solid = true;
+                for (int x = 0; x < n; ++x)
+                {
+                    if (p[x] < k_NUM_TRANSITIONS) { solid = false; break; }
+                }
+                if (solid) rows[y >> 5] |= 1u << (y & 31);
+                p += n;
+            }
+            a_Tile->m_amigaSolidRows[0] = rows[0];
+            a_Tile->m_amigaSolidRows[1] = rows[1];
+            a_Tile->m_amigaSolidKnown   = true;
+        }
+        return a_Tile->m_amigaSolidRows;
+    }
+
+    // n pixels copied, in long words once the destination is on one (the
+    // 68060 reads a long word that is not; the tile's rows start on either).
+    inline void AmigaCopyRow(Pixel16 * d, const Pixel16 * s, sint32 n)
+    {
+        if ((reinterpret_cast<uintptr_t>(d) & 2) && n > 0)
+        {
+            *d++ = *s++;
+            --n;
+        }
+        uint32 *        d32   = reinterpret_cast<uint32 *>(d);
+        const uint32 *  s32   = reinterpret_cast<const uint32 *>(s);
+        sint32          longs = n >> 1;
+        for (; longs >= 4; longs -= 4)
+        {
+            uint32 const a = s32[0], b = s32[1], c = s32[2], e = s32[3];
+            s32 += 4;
+            d32[0] = a; d32[1] = b; d32[2] = c; d32[3] = e;
+            d32 += 4;
+        }
+        while (longs-- > 0) *d32++ = *s32++;
+        if (n & 1) *reinterpret_cast<Pixel16 *>(d32) = *reinterpret_cast<const Pixel16 *>(s32);
+    }
+
+    // The same with every channel halved (the fog of war, R5G6B5).
+    inline void AmigaFogRow(Pixel16 * d, const Pixel16 * s, sint32 n)
+    {
+        if ((reinterpret_cast<uintptr_t>(d) & 2) && n > 0)
+        {
+            *d++ = static_cast<Pixel16>((*s++ >> 1) & 0x7BEF);
+            --n;
+        }
+        uint32 *        d32   = reinterpret_cast<uint32 *>(d);
+        const uint32 *  s32   = reinterpret_cast<const uint32 *>(s);
+        sint32          longs = n >> 1;
+        for (; longs >= 2; longs -= 2)
+        {
+            uint32 const a = s32[0], b = s32[1];
+            s32 += 2;
+            d32[0] = (a >> 1) & 0x7BEF7BEFu;
+            d32[1] = (b >> 1) & 0x7BEF7BEFu;
+            d32 += 2;
+        }
+        if (longs > 0) *d32++ = (*s32++ >> 1) & 0x7BEF7BEFu;
+        if (n & 1)
+        {
+            *reinterpret_cast<Pixel16 *>(d32) =
+                static_cast<Pixel16>((*reinterpret_cast<const Pixel16 *>(s32) >> 1) & 0x7BEF);
+        }
+    }
+#endif
 
     /// Manager class to acquire and release a surface lock.
     /// Using a RAII pattern to release the lock when leaving scope.
@@ -1121,11 +1221,23 @@ sint32 TiledMap::DrawBlendedTile(aui_Surface *surface, const MapPoint &pos,sint3
 	extern sint32 g_is565Format;
 	if (color == 0 && blend == 16 && g_is565Format)
 	{
+		const uint32 * const solid = AmigaSolidRows(baseTile);
+
 		for (sint32 y = 0; y < k_TILE_PIXEL_HEIGHT; y++)
 		{
 			sint32 const startX = StartPixel(y);
 			sint32 const endX   = k_TILE_PIXEL_WIDTH - startX;
 			Pixel16 *    dest   = (Pixel16 *)(pSurfBase + ((y + ypos) * surfPitch) + ((startX + xpos) << 1));
+
+			if (solid[y >> 5] & (1u << (y & 31)))
+			{
+				// No transition in this row: the tile's own pixels, halved.
+				sint32 const n = endX - startX;
+				AmigaFogRow(dest, dataPtr, n);
+				dataPtr += n;
+				if (transDataPtr) transDataPtr += n;
+				continue;
+			}
 
 			for (sint32 x = startX; x < endX; x++)
 			{
@@ -3146,6 +3258,51 @@ void TiledMap::DrawTransitionTile(aui_Surface *surface, const MapPoint &pos, sin
 	Pixel16 srcPixel;
 
 	uint16 *pDestPixel = (Pixel16 *)(pSurfBase + ypos * surfPitch + 2 * xpos);
+
+#if defined(CTP2_AMIGA_BUILD)
+	if (AmigaSolidRowsOn())
+	{
+		// Rows without a transition marker are copied whole; the others go
+		// pixel by pixel as below, with everything the loop needs in locals.
+		const uint32 * const solid      = AmigaSolidRows(baseTile);
+		sint32 const         rowPixels  = surfPitch >> 1;
+		Pixel16 *            t0         = tileData[0];
+		Pixel16 *            t1         = tileData[1];
+		Pixel16 *            t2         = tileData[2];
+		Pixel16 *            t3         = tileData[3];
+
+		for (sint32 y = 0; y < k_TILE_PIXEL_HEIGHT; y++, pDestPixel += rowPixels)
+		{
+			sint32 const startX = StartPixel(y);
+			sint32 const n      = k_TILE_PIXEL_WIDTH - 2 * startX;
+			Pixel16 *    dest   = pDestPixel + startX;
+
+			if (solid[y >> 5] & (1u << (y & 31)))
+			{
+				AmigaCopyRow(dest, dataPtr, n);
+				dataPtr += n;
+				if (transDataPtr) transDataPtr += n;
+				continue;
+			}
+
+			for (sint32 x = 0; x < n; ++x)
+			{
+				Pixel16 p = dataPtr[x];
+				if (p < k_NUM_TRANSITIONS)
+				{
+					Pixel16 * * const t = (p == 0) ? &t0 : (p == 1) ? &t1 : (p == 2) ? &t2 : &t3;
+					if (*t)                 p = *(*t)++;
+					else if (transDataPtr)  p = transDataPtr[x];
+					else                    p = DEFAULT_PIXEL[p];
+				}
+				dest[x] = p;
+			}
+			dataPtr += n;
+			if (transDataPtr) transDataPtr += n;
+		}
+		return;
+	}
+#endif
 
 	{
 		for (sint32 y = 0; y < k_TILE_PIXEL_HEIGHT; y++)

@@ -48,6 +48,8 @@
 //   is being removed. When we are updating the cells, the city is officially
 //   still on the map. (03-Jan-2018 Martin Gühmann)
 // - The settle map is now also updated after city shrinking. (03-Jan-2018 Martin Gühmann)
+// - Amiga builds: the cursor moves on during GetSettleTargets, and pairs of
+//   targets too many rows apart skip the distance computation.
 //
 //----------------------------------------------------------------------------
 
@@ -68,6 +70,9 @@
 #include <utility>
 #include <vector>
 #include "World.h"                  // g_theWorld
+#if defined(__AUI_USE_AMIGA__)
+void amiga_ui_busy_tick(void);   // ui/aui_amiga/aui_amigaui.cpp: the cursor
+#endif
 
 namespace
 {
@@ -292,6 +297,9 @@ void SettleMap::GetSettleTargets(const PLAYER_INDEX &playerId,
 	MapPoint rc_pos;
 	for(rc_pos.x = 0; rc_pos.x < g_theWorld->GetWidth(); rc_pos.x++)
 	{
+#if defined(__AUI_USE_AMIGA__)
+		amiga_ui_busy_tick();   // the cursor moves on
+#endif
 		for(rc_pos.y = 0; rc_pos.y < g_theWorld->GetHeight(); rc_pos.y++)
 		{
 			settle_target.m_value = m_settleValues.GetGridValue(rc_pos);
@@ -362,8 +370,14 @@ void SettleMap::GetSettleTargets(const PLAYER_INDEX &playerId,
 
 	settle_target = *iter;  // non-emptyness verified before
 
+#if defined(__AUI_USE_AMIGA__)
+	sint32 amigaSteps = 0;
+#endif
 	while(iter != targets.end())
 	{
+#if defined(__AUI_USE_AMIGA__)
+		if ((++amigaSteps & 63) == 0) amiga_ui_busy_tick();   // the cursor moves on
+#endif
 		g_theWorld->GetContinent(iter->m_pos, cont, is_land);
 
 #ifdef _DEBUG
@@ -391,6 +405,26 @@ void SettleMap::GetSettleTargets(const PLAYER_INDEX &playerId,
 
 			for(tmp_iter = targets.begin(); tmp_iter != iter; ++tmp_iter)
 			{
+#if defined(CTP2_AMIGA_BUILD)
+				// The squared distance is (dX² + dY²) / 2: rows apart by
+				// dY with dY² >= 2 d² are not closer than d, whatever dX.
+				// The row difference wrapped as NormalizedSubtract wraps it;
+				// most pairs end here, without the full computation (a
+				// third of an AI player's turn on a 68060).
+				{
+					sint32 dy = tmp_iter->m_pos.y - iter->m_pos.y;
+					if (g_theWorld->IsYwrap())
+					{
+						sint32 const h = g_theWorld->GetHeight();
+						if (dy > 0) { while (2 * dy > h) dy -= h; }
+						else        { while (-2 * dy > h) dy += h; }
+					}
+					if (dy * dy >= 2 * min_settle_distance * min_settle_distance)
+					{
+						continue;
+					}
+				}
+#endif
 				if(MapPoint::GetSquaredDistance(iter->m_pos, tmp_iter->m_pos) <
 				   (min_settle_distance * min_settle_distance)
 				  )
@@ -446,6 +480,35 @@ void SettleMap::GetSettleTargets(const PLAYER_INDEX &playerId,
 
 bool SettleMap::HasCityInSettleDistance(const MapPoint & pos, sint32 min_settle_distance) const
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// The cells the RadiusIterator below visits are those within the squared
+	// distance min_settle_distance² of pos (its square covers that circle),
+	// so a city is among them when a city is that close: the cities are asked
+	// instead of every cell round every candidate (a fifth of an AI player's
+	// turn on a 68060). Not on a world that wraps north-south, where the
+	// iterator measures cells across the seam differently.
+	if (!g_theWorld->IsYwrap() && min_settle_distance >= 0)
+	{
+		sint32 const limit = min_settle_distance * min_settle_distance;
+		bool found = false;
+		for (sint32 p = 0; p < k_MAX_PLAYERS && !found; ++p)
+		{
+			if (!g_player[p] || !g_player[p]->m_all_cities) continue;
+			sint32 const n = g_player[p]->m_all_cities->Num();
+			for (sint32 c = 0; c < n; ++c)
+			{
+				Unit const & city = g_player[p]->m_all_cities->Access(c);
+				if (!city.IsValid()) continue;
+				if (MapPoint::GetSquaredDistance(city.RetPos(), pos) <= limit)
+				{
+					found = true;
+					break;
+				}
+			}
+		}
+		return found;
+	}
+#endif
 	RadiusIterator it(pos, min_settle_distance);
 
 	for(it.Start(); !it.End(); it.Next())

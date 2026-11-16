@@ -275,8 +275,12 @@
 #if defined(CTP2_AMIGA_BUILD)
 #include "amiga_platform.h"     // amiga_delay_ms
 void amiga_ui_busy_tick(void);
+void gamefile_AmigaAsyncNext(void);    // gs/fileio/GameFile.cpp
+void gamefile_AmigaSaveFlush(void);
 void amiga_uipreload_start(void);   // ui/interface/amiga_uipreload.cpp
 void amiga_uipreload_idle(void);  // ui/aui_amiga/aui_amigaui.cpp
+void amiga_check_scroll_begin(void);    // gfx/tilesys/tiledmap.cpp, ENV:CTP2_CHECK
+void amiga_check_scroll_end(void);
 extern bool   g_amigaMixStale;      // gfx/tilesys/tiledmap.cpp
 extern uint32 g_amigaLastScrollMs;
 #else
@@ -1536,6 +1540,9 @@ void CivApp::CleanupAppDB(void)
 
 void CivApp::CleanupApp(void)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	gamefile_AmigaSaveFlush();
+#endif
 	if (m_appLoaded)
 	{
 		g_network.Cleanup();
@@ -2259,6 +2266,9 @@ void CivApp::CleanupGameUI(void)
 
 void CivApp::CleanupGame(bool keepScenInfo)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	gamefile_AmigaSaveFlush();   // an autosave still on its way to the disk
+#endif
 	gameinit_CleanupMessages();
 	uint32 target_milliseconds = 100000;
 	uint32 used_milliseconds;
@@ -2389,6 +2399,12 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 			                  && !g_network.ReadyToStart();
 
 		if (m_gameLoaded && !g_modalWindow) {
+#if defined(__AUI_USE_AMIGA__)
+			// Where the view was before the scroll: the map's own surface
+			// (not drawn on while the steps go to the background's) still
+			// shows it, and is shifted at the end instead of painted again.
+			RECT const viewBeforeScroll = g_tiledMap->GetMapViewRect();
+#endif
 			if (!netGameLoading && ui_CheckForScroll()) {
 				do {
 #if defined(__AUI_USE_AMIGA__)
@@ -2428,9 +2444,21 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 #endif
 				} while (ui_CheckForScroll());
 
+#if defined(__AUI_USE_AMIGA__)
+				amiga_check_scroll_begin();
+#endif
 				g_tiledMap->RetargetTileSurface(NULL);
+#if defined(__AUI_USE_AMIGA__)
+				// A short scroll: the surface shifted and the strip it
+				// uncovered painted (a long one is painted whole).
+				if (g_tiledMap->AmigaRefreshMoved(viewBeforeScroll) >= 0)
+				{
+					g_tiledMap->InvalidateMap();
+				}
+#else
 				g_tiledMap->Refresh();
 				g_tiledMap->InvalidateMap();
+#endif
 				g_tiledMap->ValidateMix();
 #if defined(__AUI_USE_AMIGA__)
 				g_amigaMixStale = false;    // all of it again, just now
@@ -2474,6 +2502,7 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 				if(g_background)
 					g_background->Draw();
 #if defined(__AUI_USE_AMIGA__)
+				amiga_check_scroll_end();
 				AMIGA_PERF_END(perfMap, AMIGA_PERF_MAP);
 				}
 				// The cursor moves between the frame's phases too, not
@@ -2894,6 +2923,12 @@ void CivApp::AutoSave(sint32 player, bool isQuickSave)
 	if ((g_network.IsActive() && !g_network.IsHost()) || g_network.IsNetworkLaunch())
 		return;
 
+#if defined(CTP2_AMIGA_BUILD)
+	// The autosave before this one may still be on its way to the disk: it
+	// is finished before its file is renamed below.
+	gamefile_AmigaSaveFlush();
+#endif
+
 	MBCHAR const *  autosaveItem    = (isQuickSave) ? "QUICKSAVE_NAME" : "AUTOSAVE_NAME";
 	MBCHAR const *  autosaveName    = g_theStringDB->GetNameStr(autosaveItem);
 
@@ -2952,6 +2987,11 @@ void CivApp::AutoSave(sint32 player, bool isQuickSave)
 		}
 
 		g_isScenario = FALSE;
+#if defined(CTP2_AMIGA_BUILD)
+		// The turn's autosave is compressed and written in the background
+		// (not a quick save, which the player asked for; not in network games).
+		if (!isQuickSave && !g_network.IsActive()) gamefile_AmigaAsyncNext();
+#endif
 		GameFile().Save(fullpath, NULL);
 	}
 	else

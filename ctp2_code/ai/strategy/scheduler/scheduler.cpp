@@ -53,6 +53,7 @@
 // - Fixed a crash in Remove_Goal. The goal is also removed from m_goals
 //   before deleted. (31-Dec-2018 Martin Gühmann)
 // - New goals are only added if the AI can achieve them. (08-Jan-2018 Martin Gühmann)
+// - Amiga builds: the cursor moves on while goals are prioritized.
 //
 //----------------------------------------------------------------------------
 
@@ -81,6 +82,9 @@
 #include "ArmyData.h"
 #include "citydata.h"
 #include "World.h"
+#if defined(__AUI_USE_AMIGA__)
+void amiga_ui_busy_tick(void);   // ui/aui_amiga/aui_amigaui.cpp: the cursor
+#endif
 
 namespace
 {
@@ -1341,6 +1345,9 @@ void Scheduler::Raw_Prioritize_Goals()
 		while(sorted_goal_iter != m_goals_of_type[goal_type].end())
 		{
 			Goal_ptr goal_ptr = sorted_goal_iter->second;
+#if defined(__AUI_USE_AMIGA__)
+			amiga_ui_busy_tick();   // the cursor moves on (at most 50 times a second)
+#endif
 #if 0
 			// Get_Totally_Complete also called in Compute_Raw_Priority
 			if(goal_ptr->Get_Totally_Complete())
@@ -1457,6 +1464,9 @@ void Scheduler::Prioritize_Goals()
 		)
 		{
 			Goal_ptr goal_ptr = sorted_goal_iter->second;
+#if defined(__AUI_USE_AMIGA__)
+			amiga_ui_busy_tick();   // the cursor moves on (at most 50 times a second)
+#endif
 
 			if(sorted_goal_iter->first > Goal::BAD_UTILITY)
 			{

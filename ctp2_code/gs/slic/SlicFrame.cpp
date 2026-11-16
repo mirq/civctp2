@@ -40,6 +40,7 @@
 // - Added database array access. (Sep 16th 2005 Martin Gühmann)
 // - Repaired crashes with game saved with original Activision executable.
 // - Standardized code. (May 29th 2006 Martin Gühmann)
+// - Amiga builds: source offsets of lines only for a debugger break.
 //
 //----------------------------------------------------------------------------
 
@@ -1102,7 +1103,18 @@ BOOL SlicFrame::DoInstruction(SOP op)
 
 			ival2 = *((sint32 *)codePtr);
 			if(m_segment->GetFilename()) {
+#if defined(CTP2_AMIGA_BUILD)
+				// The line's offset in the source file is for the SLIC
+				// debugger only (GetSourceLines finds it when it is
+				// missing): finding it opens the .slc file and reads it up
+				// to that line, the first time each line runs. Opening a
+				// goody hut spent half of a turn's unit moves in it on a
+				// 68060. Only for a break (DebugSlic, which shows script
+				// errors, is on in the default profile and needs none).
+				if(ival2 < 0 && g_slicEngine->BreakRequested()) {
+#else
 				if(ival2 < 0) {
+#endif
 
 					*((sint32 *)codePtr) = FindFileOffset(m_segment->GetFilename(), ival);
 					ival2 = *((sint32 *)codePtr);

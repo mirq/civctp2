@@ -43,6 +43,17 @@ static ShadowRow *     s_shadowKeep;       /* as many again, for a rotation of t
 static int             s_shadowOff;        /* 1: send every pixel (the shadow no longer holds) */
 static int             s_lockFailedLogged;
 
+/* The one way to the card's memory: NULL when the CPU must not touch it
+ * (ENV:CTP2_PPCCARD=0 on WarpOS), and every copy then goes through
+ * WritePixelArray, which the 68k carries out. */
+static int             s_noCardLock;
+
+static APTR card_lock(struct TagItem *tags)
+{
+	if (s_noCardLock) return NULL;
+	return LockBitMapTagList(s_screen->RastPort.BitMap, tags);
+}
+
 
 #if defined(CTP2_AMIGA_WOS)
 /* Amiberry's RTG card (uaegfx.card) redraws only the parts of its memory it
@@ -213,7 +224,27 @@ static void clear_card(int sw, int sh)
 		{ TAG_DONE,         0 }
 	};
 
-	handle = LockBitMapTagList(s_screen->RastPort.BitMap, tags);
+#if defined(CTP2_AMIGA_WOS)
+	/* A Sonnet behind the PCI bridge: the PowerPC's first writes to the
+	 * Radeon's memory right after the mode switch and SetRast froze the whole
+	 * A4000 (bus locked, grey screen) in most runs; with a few seconds between
+	 * the steps, and from then on, they never did. So the card clears itself
+	 * (FillPixelArray, its driver on the 68k), and the PowerPC leaves it alone
+	 * for ENV:CTP2_CARDSETTLE ms more (default 500). */
+	if (!s_noCardLock)
+	{
+		char  value[16];
+		long  settle = 500;
+		if (amiga_env_value("CTP2_CARDSETTLE", value, sizeof(value)) > 0) settle = atol(value);
+		FillPixelArray(&s_screen->RastPort, 0, 0, (UWORD)sw, (UWORD)sh, 0x00000000);
+		WaitBlit();
+		if (settle > 0) Delay((ULONG)((settle + 19) / 20));
+		amiga_log("Screen: cleared by the card, %ld ms settle\n", settle);
+		return;
+	}
+#endif
+
+	handle = card_lock(tags);
 	if (handle && base)
 	{
 		int y;
@@ -228,6 +259,19 @@ static void clear_card(int sw, int sh)
 	}
 	if (handle) UnLockBitMap(handle);
 	s_shadowOff = 1;
+}
+
+static void yardstick(int sw, int sh);    /* at the end of the file */
+
+/* ENV:CTP2_STEPDELAY: each step of opening the screen logged, then 3 s of
+ * rest, so a log read from outside shows the step a hang begins in. */
+static void open_step(const char *what)
+{
+	static int s_delay = -1;
+	if (s_delay < 0) s_delay = amiga_env_flag("CTP2_STEPDELAY");
+	if (!s_delay) return;
+	amiga_log("Screen step: %s\n", what);
+	Delay(150);
 }
 
 int amiga_video_open(int width, int height)
@@ -265,8 +309,10 @@ int amiga_video_open(int width, int height)
 			{ SA_Colors,    (ULONG)black },
 			{ TAG_DONE,     0 }
 		};
+		open_step("OpenScreen next");
 		s_screen = OpenScreenTagList(NULL, tags);
 	}
+	open_step("OpenScreen done");
 	if (!s_screen)
 	{
 		amiga_log("OpenScreen of mode $%08lx failed\n", (unsigned long)id);
@@ -291,7 +337,9 @@ int amiga_video_open(int width, int height)
 			{ WA_IDCMP,        IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE },
 			{ TAG_DONE,        0 }
 		};
+		open_step("OpenWindow next");
 		s_window = OpenWindowTagList(NULL, tags);
+		open_step("OpenWindow done");
 	}
 	if (!s_window)
 	{
@@ -307,6 +355,7 @@ int amiga_video_open(int width, int height)
 
 	/* The border round a smaller picture is black. */
 	SetRast(&s_screen->RastPort, 0);
+	open_step("SetRast done");
 
 	/* The shadow starts as zeros, black in every pixel format; clear_card
 	 * (below) makes the card show just that. */
@@ -342,9 +391,18 @@ int amiga_video_open(int width, int height)
 	{
 		amiga_log("Screen: uaegfx.card (Amiberry): the 68k marks each copy for the display\n");
 	}
+	{
+		char value[8];
+		s_noCardLock = amiga_env_value("CTP2_PPCCARD", value, sizeof(value)) > 0 && value[0] == '0';
+	}
+	amiga_log("Screen: the PPC %s the card's memory\n", s_noCardLock ? "leaves (WritePixelArray)" : "writes");
 #endif
 
+	open_step("clear_card next");
 	clear_card(sw, sh);
+	open_step("clear_card done");
+	if (amiga_perf) yardstick(sw, sh);
+	open_step("yardstick done");
 
 	ScreenToFront(s_screen);
 	ActivateWindow(s_window);
@@ -407,7 +465,7 @@ int amiga_video_dump_card(const char *path)
 			{ LBMI_BYTESPERROW, (ULONG)&bpr },
 			{ TAG_DONE,         0 }
 		};
-		handle = LockBitMapTagList(s_screen->RastPort.BitMap, tags);
+		handle = card_lock(tags);
 	}
 	if (handle && base)
 	{
@@ -440,7 +498,7 @@ int amiga_video_dump_card(const char *path)
 					{ LBMI_BYTESPERROW, (ULONG)&bpr },
 					{ TAG_DONE,         0 }
 				};
-				handle = LockBitMapTagList(s_screen->RastPort.BitMap, tags);
+				handle = card_lock(tags);
 			}
 			if (!handle || !base) break;
 		}
@@ -1189,7 +1247,7 @@ static void present_rects(const AmigaSource *srcs, int nsrc)
 			{ TAG_DONE,         0 }
 		};
 		AMIGA_PERF_BEGIN(t0);
-		handle = LockBitMapTagList(s_screen->RastPort.BitMap, tags);
+		handle = card_lock(tags);
 		AMIGA_PERF_END(t0, AMIGA_PERF_CARD_LOCK);
 	}
 
@@ -1246,4 +1304,149 @@ static void present_rects(const AmigaSource *srcs, int nsrc)
 			if (clip(&x, &y, &w, &h)) write_rect_fallback(srcs[k].pixels, srcs[k].pitch, x, y, w, h);
 		}
 	}
+}
+
+/* ENV:CTP2_PERF: what this machine does, as a yardstick for the copy's
+ * numbers, once when the screen opens (it is black, and stays black: the
+ * card is written with zeros). Megabytes a second for: fast RAM to fast RAM
+ * in long words, the same with the source off a long word, the compare with
+ * the shadow, and to the card plain and through the pixel conversion. The
+ * last two tell whether comparing before writing pays (ENV:CTP2_STRIPWRITE):
+ * it does while a pixel costs much more to write than to compare. */
+static void yardstick(int sw, int sh)
+{
+	enum { ROWS = 128 };
+	int const       w     = sw & ~15;
+	size_t const    bytes = (size_t)w * 2 * ROWS;
+	uint16_t *      a     = (uint16_t *)calloc(bytes + 16, 1);
+	uint16_t *      b     = (uint16_t *)calloc(bytes + 16, 1);
+	uint64_t        t0, tCopy, tOff, tCmp, tCard = 0, tConv = 0;
+	uint32_t        differs = 0;
+	int             y, rep;
+	APTR            handle;
+	ULONG           base = 0, bpr = 0;
+	struct TagItem  tags[] =
+	{
+		{ LBMI_BASEADDRESS, (ULONG)&base },
+		{ LBMI_BYTESPERROW, (ULONG)&bpr },
+		{ TAG_DONE,         0 }
+	};
+
+	if (!a || !b || sh < ROWS || w < SEG) { free(a); free(b); return; }
+
+	t0 = amiga_ticks_us();
+	for (rep = 0; rep < 4; ++rep)
+		for (y = 0; y < ROWS; ++y) amiga_copy_up(b + (size_t)y * w, a + (size_t)y * w, w);
+	tCopy = amiga_ticks_us() - t0;
+
+	t0 = amiga_ticks_us();
+	for (rep = 0; rep < 4; ++rep)
+		for (y = 0; y < ROWS; ++y) memcpy((uint8_t *)b + (size_t)y * w * 2, (uint8_t *)a + (size_t)y * w * 2 + 2, (size_t)w * 2 - 2);
+	tOff = amiga_ticks_us() - t0;
+
+	t0 = amiga_ticks_us();
+	for (rep = 0; rep < 4; ++rep)
+		for (y = 0; y < ROWS; ++y)
+		{
+			int x;
+			for (x = 0; x < w; x += SEG)
+				differs += (uint32_t)segment_differs(a + (size_t)y * w + x, b + (size_t)y * w + x, SEG);
+		}
+	tCmp = amiga_ticks_us() - t0;
+
+	handle = card_lock(tags);
+	if (handle && base)
+	{
+		/* Between lock and unlock: only the writes (and the clock, which
+		 * reads a timer and calls nothing of the graphics system). */
+		t0 = amiga_ticks_us();
+		for (y = 0; y < ROWS; ++y)
+			amiga_copy_up((uint16_t *)((uint8_t *)base + (size_t)y * bpr), a + (size_t)y * w, w);
+		tCard = amiga_ticks_us() - t0;
+
+		t0 = amiga_ticks_us();
+		for (y = 0; y < ROWS; ++y)
+			convert_row((uint8_t *)base + (size_t)y * bpr, a + (size_t)y * w, w);
+		tConv = amiga_ticks_us() - t0;
+	}
+	if (handle) UnLockBitMap(handle);
+
+#define MBS(us, n) ((us) ? (unsigned long)((uint64_t)(n) * 100 / (us)) : 0UL)    /* hundredths of MB/s */
+	{
+		unsigned long const copy = MBS(tCopy, bytes * 4), off = MBS(tOff, bytes * 4), cmp = MBS(tCmp, bytes * 4);
+		unsigned long const card = MBS(tCard, bytes), conv = MBS(tConv, bytes);
+		amiga_log("Yardstick: fast RAM copy %lu.%02lu MB/s (off a long word %lu.%02lu), compare %lu.%02lu MB/s; "
+		          "to the card %lu.%02lu MB/s plain, %lu.%02lu MB/s through the pixel conversion (format %lu)%s\n",
+		          copy / 100, copy % 100, off / 100, off % 100, cmp / 100, cmp % 100,
+		          card / 100, card % 100, conv / 100, conv % 100, (unsigned long)s_pixfmt,
+		          differs ? " (compare found differences?)" : "");
+	}
+#undef MBS
+	free(a);
+	free(b);
+}
+
+int amiga_video_check(const uint16_t *picture, int pitch,
+                      uint32_t *cardDiffers, uint32_t *shadowDiffers, AmigaRect *where)
+{
+	APTR            handle;
+	ULONG           base = 0, bpr = 0;
+	uint32_t        card = 0, shadow = 0;
+	int             x, y;
+	int             swap, bgr;
+	struct TagItem  tags[] =
+	{
+		{ LBMI_BASEADDRESS, (ULONG)&base },
+		{ LBMI_BYTESPERROW, (ULONG)&bpr },
+		{ TAG_DONE,         0 }
+	};
+
+	*cardDiffers = *shadowDiffers = 0;
+	where->left = s_width; where->top = s_height; where->right = 0; where->bottom = 0;
+
+	if (!s_screen) return 0;
+	switch (s_pixfmt)
+	{
+	case PIXFMT_RGB16:   swap = 0; bgr = 0; break;
+	case PIXFMT_RGB16PC: swap = 1; bgr = 0; break;
+	case PIXFMT_BGR16:   swap = 0; bgr = 1; break;
+	case PIXFMT_BGR16PC: swap = 1; bgr = 1; break;
+	default:             return 0;      /* 15 bits: the card holds less */
+	}
+
+	handle = card_lock(tags);
+	if (!handle || !base)
+	{
+		if (handle) UnLockBitMap(handle);
+		return 0;
+	}
+
+	/* Between lock and unlock: only reading and comparing. */
+	for (y = 0; y < s_height; ++y)
+	{
+		const uint16_t * want = (const uint16_t *)((const uint8_t *)picture + (size_t)y * pitch);
+		const uint16_t * row  = (const uint16_t *)((const uint8_t *)base + (size_t)(s_oy + y) * bpr) + s_ox;
+		const uint16_t * shad = (s_shadow && !s_shadowOff) ? SHADOW(y) : NULL;
+
+		for (x = 0; x < s_width; ++x)
+		{
+			uint16_t p = row[x];
+			if (swap) p = (uint16_t)((p << 8) | (p >> 8));
+			if (bgr)  p = (uint16_t)((p & 0x07E0) | (p << 11) | (p >> 11));
+			if (p != want[x])
+			{
+				++card;
+				if (x < where->left)        where->left   = x;
+				if (x + 1 > where->right)   where->right  = x + 1;
+				if (y < where->top)         where->top    = y;
+				if (y + 1 > where->bottom)  where->bottom = y + 1;
+			}
+			if (shad && shad[x] != want[x]) ++shadow;
+		}
+	}
+	UnLockBitMap(handle);
+
+	*cardDiffers   = card;
+	*shadowDiffers = shadow;
+	return 1;
 }

@@ -24,7 +24,7 @@
 //
 // Modifications from the original Activision code:
 //
-// - None
+// - Amiga builds: the cursor moves on during long searches.
 //
 //----------------------------------------------------------------------------
 
@@ -42,6 +42,9 @@
 #include "aui_control.h"
 
 extern Player **g_player;
+#if defined(__AUI_USE_AMIGA__)
+void amiga_ui_busy_tick(void);   // ui/aui_amiga/aui_amigaui.cpp: the cursor
+#endif
 
 void World::FindCityDistances(sint32 player, const MapPoint &start)
 {
@@ -142,7 +145,13 @@ void World::FindDistances(sint32 player, const MapPoint &start, sint32 numHits,
 
 	FDMove(0, start.x, start.y, player, numHits, cb, cookie);
 
+#if defined(__AUI_USE_AMIGA__)
+	sint32 amigaSteps = 0;
+#endif
 	while(numHits > 0) {
+#if defined(__AUI_USE_AMIGA__)
+		if ((++amigaSteps & 255) == 0) amiga_ui_busy_tick();   // the cursor moves on
+#endif
 		DistItem item;
 		if(m_distanceQueue->RemoveTop(item)) {
 			FDMove(item.m_value - sint32(m_map[item.x][item.y]->m_move_cost),

@@ -2478,10 +2478,14 @@ void Player::EndTurn()
 	if(g_controlPanel)
 	{
 #if defined(CTP2_AMIGA_BUILD)
-		// As in BeginTurn (PlayerTurn.cpp): only for the player at the screen.
+		// Only for the player at the screen, and with the next frame: drawn
+		// here the whole panel was drawn twice (nothing reaches the screen
+		// before that frame; ~0.1 s of every End Turn on a 68060).
 		if (m_owner == g_selected_item->GetVisiblePlayer())
-#endif
+			g_controlPanel->GetWindow()->ShouldDraw(TRUE);
+#else
 		g_controlPanel->GetWindow()->DrawChildren();
+#endif
 	}
 
 	if (m_isDead)

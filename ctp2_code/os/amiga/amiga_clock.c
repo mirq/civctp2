@@ -138,17 +138,57 @@ void amiga_clock_exit(void)
 	TimerBase = NULL;
 }
 
-uint64_t amiga_ticks_us(void)
+/* Each reading was four 64-bit divisions (three here, one for the
+ * milliseconds), which the 68060 does in software (__udivdi3): GetTickCount
+ * and the cursor's busy ticks read the clock all the time. Now the full
+ * conversion is done when an anchor is taken (at least once a minute); in
+ * between, the E-clock ticks since the anchor (a 32-bit count) become
+ * microseconds with one FPU multiply and milliseconds with a 32-bit divide.
+ * Only the game's own task reads the clock. */
+static uint64_t s_anchorTicks;   /* E-clock, since s_base */
+static uint64_t s_anchorUs;
+static uint32_t s_anchorMs;
+static uint32_t s_anchorUsRest;  /* s_anchorUs % 1000 */
+static uint32_t s_anchorSpan;    /* ticks after which a new anchor is taken */
+static double   s_usPerTick;
+static uint64_t s_lastUs;
+static uint32_t s_lastMs;
+
+static void clock_read(void)
 {
 	struct EClockVal ev;
 	uint64_t t;
 
-	if (!s_open) return 0;
-
 	ReadEClock(&ev);
 	t = (((uint64_t)ev.ev_hi << 32) | ev.ev_lo) - s_base;
-	/* Seconds and the rest apart, so the products stay small. */
-	return (t / s_efreq) * 1000000u + ((t % s_efreq) * 1000000u) / s_efreq;
+
+	if (!s_anchorSpan || t < s_anchorTicks || t - s_anchorTicks >= s_anchorSpan)
+	{
+		/* Seconds and the rest apart, so the products stay small. */
+		s_anchorTicks  = t;
+		s_anchorUs     = (t / s_efreq) * 1000000u + ((t % s_efreq) * 1000000u) / s_efreq;
+		s_anchorMs     = (uint32_t)(s_anchorUs / 1000u);
+		s_anchorUsRest = (uint32_t)(s_anchorUs % 1000u);
+		s_anchorSpan   = s_efreq * 60u;
+		s_usPerTick    = 1000000.0 / (double)s_efreq;
+		s_lastUs       = s_anchorUs;
+		s_lastMs       = s_anchorMs;
+		return;
+	}
+
+	{
+		int32_t const  delta = (int32_t)(uint32_t)(t - s_anchorTicks);   /* < 2^31 */
+		uint32_t const du    = (uint32_t)(int32_t)((double)delta * s_usPerTick);
+		s_lastUs = s_anchorUs + du;
+		s_lastMs = s_anchorMs + (s_anchorUsRest + du) / 1000u;
+	}
+}
+
+uint64_t amiga_ticks_us(void)
+{
+	if (!s_open) return 0;
+	clock_read();
+	return s_lastUs;
 }
 
 void amiga_delay_ms(uint32_t ms)
@@ -161,12 +201,21 @@ void amiga_delay_ms(uint32_t ms)
 	DoIO((struct IORequest *)s_req);
 }
 
+uint32_t amiga_ticks_ms(void)
+{
+	if (!s_open) return 0;
+	clock_read();
+	return s_lastMs;
+}
+
 #endif
 
+#if defined(CTP2_AMIGA_WOS)
 uint32_t amiga_ticks_ms(void)
 {
 	return (uint32_t)(amiga_ticks_us() / 1000u);
 }
+#endif
 
 /* libnix has usleep; the WarpOS newlib may not. The game's few calls are in
  * the network code, which does not run here. */

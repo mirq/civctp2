@@ -70,6 +70,21 @@ With `ENV:CTP2_TEST` set, F9 explores the whole map. Look at the pictures
 too: when the frame itself is drawn wrong, the three dumps still agree.
 See [graphics-pipeline.md](graphics-pipeline.md), section 11.
 
+## The benchmark and the self-check
+
+`setenv CTP2_BENCH 1` (with `CTP2_PERF 1` for the per-phase lines and the
+yardstick) and start the game: it starts a game on a fixed world, scrolls,
+logs `Bench:` lines and quits, about two and a half minutes in Amiberry.
+Leave the pointer away from the screen's edges. Compare two builds by their
+`Bench:` lines and by the three pictures it leaves in `RAM:` (`bench_fog`,
+`bench_sight`, `bench_end`), which must be identical when only speed
+changed.
+
+`setenv CTP2_CHECK 8` adds the self-check (`Check:` lines). Expect a few
+tens of pixels now and then from the card check and a few thousand after
+each scroll, all on sprites; anything on the terrain, or large numbers, is a
+fault in the display path. The pictures `RAM:ctp2check<n>.ppm` show where.
+
 ## AI regression
 
 The same procedure as on other platforms (CONTRIBUTING.md): start a game,

@@ -79,6 +79,8 @@
 //   captured or destroyed, or armies are created, or on reload. This way, we
 //   do not miss anything and we can just add the goals that can also be
 //   executed by the AI according to the game state for instance diplomacy. (08-Jan-2019 Martin Gühmann)
+// - Amiga builds: BeginTurn's visible-improvement flags computed once, not
+//   once per possible player (the loop reads the same player each time).
 //
 //----------------------------------------------------------------------------
 
@@ -1221,6 +1223,15 @@ void CtpAi::BeginTurn(const PLAYER_INDEX player)
 		if(player == i)
 			continue;
 
+		// NOTE: g_player[player], not g_player[i]: every pass walks this
+		// player's own cities and sets the same flags again (a bug, kept: the
+		// AI's behaviour depends on it). The Amiga builds do it once: each
+		// pass checked every city's whole radius, k_MAX_PLAYERS - 1 times
+		// per player and turn.
+#if defined(CTP2_AMIGA_BUILD)
+		if (i > ((player == 0) ? 1 : 0))
+			break;
+#endif
 		Player * other_player = g_player[player];
 		if(other_player == NULL)
 			continue;

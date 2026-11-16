@@ -23,6 +23,7 @@
 // Modifications from the original Activision code:
 //
 // - Moved CalculateHash() from aui_UI
+// - Amiga builds: the hash lowers ASCII inline.
 //
 //----------------------------------------------------------------------------
 
@@ -73,7 +74,13 @@ uint32 update_crc(uint32 crc_accum, const MBCHAR *data_blk_ptr, size_t data_blk_
    size_t i, j;
 
    for ( j = 0;  j < data_blk_size;  j++ ) {
+#if defined(CTP2_AMIGA_BUILD)
+      // tolower is a function call in libnix (C locale: ASCII only, as here).
+      int const c = (unsigned char) *data_blk_ptr++;
+      i = ( (int) ( crc_accum >> 24) ^ ((c >= 'A' && c <= 'Z') ? c + 32 : c) ) & 0xff;
+#else
       i = ( (int) ( crc_accum >> 24) ^ tolower(*data_blk_ptr++) ) & 0xff;
+#endif
       crc_accum = ( crc_accum << 8 ) ^ g_crcTable[i];
    }
 

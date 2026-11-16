@@ -29,6 +29,8 @@
 // - Fixed first RadiusIterator constructor so that it does the same as
 //   in the original version. The defect caused a significant AI
 //   performance loss. July 16th 2005 Martin Gühmann
+// - Amiga builds: GetNeighborPosition and NormalizedSubtract computed
+//   directly (the same steps, wraps and checks without OrthogonalPoint).
 //
 //----------------------------------------------------------------------------
 
@@ -224,6 +226,85 @@ bool MapPoint::GetNeighborPosition
 	MapPoint &              pos
 ) const
 {
+#if defined(CTP2_AMIGA_BUILD) && defined(_SMALL_MAPPOINTS)
+	// What the OrthogonalPoint below does, step by step: to XY (x = 2x + y
+	// modulo twice the width), the step, the wraps, the range and parity
+	// check, back to RC. Without the object, its modulo and its repeated
+	// normalising (and the two wrap queries each time) it is a few
+	// additions: the map's flood fills, the AI's searches and the pathing
+	// ask for neighbours all the time (a tenth of an AI turn on a 68060).
+	static signed char const s_step[8][2] =
+	{
+		{  0, -2 },   // NORTH
+		{  1, -1 },   // NORTHEAST
+		{  2,  0 },   // EAST
+		{ -1, -1 },   // NORTHWEST
+		{  1,  1 },   // SOUTHEAST
+		{ -2,  0 },   // WEST
+		{ -1,  1 },   // SOUTHWEST
+		{  0,  2 }    // SOUTH
+	};
+	sint32 const w2 = 2 * g_mp_size.x;
+	sint32 const h  = g_mp_size.y;
+	sint32       dx = 0;
+	sint32       dy = 0;
+	if (static_cast<unsigned>(direction) < 8)
+	{
+		dx = s_step[direction][0];
+		dy = s_step[direction][1];
+
+		// The usual case, a point of the map on a world that does not wrap
+		// north-south, in row and column terms: the row moves by dy, and
+		// since X - Y = 2x (modulo twice the width) the column moves by
+		// (dx - dy) / 2, wrapped as the conversion back wraps it. Only a
+		// world that does not wrap east-west needs X itself, for its edge.
+		sint32 const w = g_mp_size.x;
+		if (!g_theWorld->IsYwrap() && x >= 0 && x < w && y >= 0 && y < h)
+		{
+			sint32 const ny = y + dy;
+			bool ok = (ny >= 0 && ny < h);
+			if (ok && !g_theWorld->IsXwrap())
+			{
+				sint32 X0 = 2 * x + y;
+				while (X0 >= w2) X0 -= w2;
+				X0 += dx;
+				ok = (X0 >= 0 && X0 < w2);
+			}
+			sint32 nx = x + ((dx - dy) >> 1);
+			if (nx < 0)       nx += w;
+			else if (nx >= w) nx -= w;
+			if (!ok) return false;
+			pos.x = static_cast<sint16>(nx);
+			pos.y = static_cast<sint16>(ny);
+			return true;
+		}
+	}
+	// As the original, in 16-bit fields.
+	sint16 X = static_cast<sint16>((2 * x + y) % w2);
+	sint16 Y = y;
+	X = static_cast<sint16>(X + dx);
+	Y = static_cast<sint16>(Y + dy);
+	if (g_theWorld->IsXwrap())
+	{
+		while (X < 0)   X = static_cast<sint16>(X + w2);
+		while (X >= w2) X = static_cast<sint16>(X - w2);
+	}
+	if (g_theWorld->IsYwrap())
+	{
+		while (Y < 0)   Y = static_cast<sint16>(Y + h);
+		while (Y >= h)  Y = static_cast<sint16>(Y - h);
+	}
+	if (X < 0 || X >= w2 || Y < 0 || Y >= h || ((X + Y) & 1))
+	{
+		return false;
+	}
+	sint32 rx = (X - Y) >> 1;
+	while (rx < 0)               rx += g_mp_size.x;
+	while (rx >= g_mp_size.x)    rx -= g_mp_size.x;
+	pos.x = static_cast<sint16>(rx);
+	pos.y = Y;
+	return true;
+#else
 	OrthogonalPoint	point(*this);
 	Assert(point.IsValid());
 
@@ -235,6 +316,7 @@ bool MapPoint::GetNeighborPosition
 	}
 
 	return isAtMap;
+#endif
 }
 
 //----------------------------------------------------------------------------
@@ -370,6 +452,23 @@ bool MapPoint::IsValid(void) const
 //----------------------------------------------------------------------------
 MapPointData MapPoint::NormalizedSubtract(MapPoint const & dest) const
 {
+#if defined(CTP2_AMIGA_BUILD) && defined(_SMALL_MAPPOINTS)
+	// The OrthogonalPoint computation below without the objects (as in
+	// GetNeighborPosition): every distance the AI measures comes here.
+	sint32 const w2 = 2 * g_mp_size.x;
+	sint16 const hereX = static_cast<sint16>((2 * x + y) % w2);
+	sint16 const toX   = static_cast<sint16>((2 * dest.x + dest.y) % w2);
+	MapPointData diff(static_cast<sint16>(toX - hereX), static_cast<sint16>(dest.y - y));
+	if (g_theWorld->IsXwrap())
+	{
+		diff.x = static_cast<sint16>(WrapDelta(diff.x, w2));
+	}
+	if (g_theWorld->IsYwrap())
+	{
+		diff.y = static_cast<sint16>(WrapDelta(diff.y, g_mp_size.y));
+	}
+	return diff;
+#else
 	OrthogonalPoint here    (*this);
 	OrthogonalPoint to      (dest);
 	to.Move(MapPointData(-here.x, -here.y));
@@ -386,6 +485,7 @@ MapPointData MapPoint::NormalizedSubtract(MapPoint const & dest) const
 	}
 
 	return diff;
+#endif
 }
 
 //----------------------------------------------------------------------------

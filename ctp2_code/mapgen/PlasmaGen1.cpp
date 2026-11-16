@@ -96,7 +96,14 @@ sint8 Rand1(sint8 base, sint8 delta)
 
 STDMETHODIMP PlasmaGenerator1::Generate(sint8 *map, sint32 width, sint32 height)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// The game's own seed when one is set (ENV:CTP2_SEED, a benchmark), so
+	// that the same seed gives the same world.
+	extern sint32 g_oldRandSeed;
+	srand(g_oldRandSeed ? g_oldRandSeed : time(0));
+#else
 	srand(time(0));
+#endif
 	int i,j,i2,j2,i3,j3,h,h2,delta,a,b,c,d;
 
 

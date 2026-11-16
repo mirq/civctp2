@@ -25,6 +25,7 @@
 // - Increased sprite limit from 200 to 255.
 // - Marked Microsoft extensions.
 // - Removed useless - and memory wasting - SpriteList dependency.
+// - Amiga builds: groups stay fully loaded after their animations (a cache).
 //
 //----------------------------------------------------------------------------
 
@@ -39,7 +40,9 @@
 // Library dependencies
 //----------------------------------------------------------------------------
 
-// None
+#if defined(CTP2_AMIGA_BUILD)
+#include <vector>
+#endif
 
 //----------------------------------------------------------------------------
 // Export overview
@@ -90,6 +93,21 @@ public:
 
 private:
 	SpriteGroup *   m_spriteList[k_MAX_SPRITES];
+
+#if defined(CTP2_AMIGA_BUILD)
+	// ENV:CTP2_SPRITECACHE (units, default 8) and ENV:CTP2_EFFECTCACHE
+	// (effects, default 4; 0: off): so many groups stay fully loaded once no
+	// actor uses their full load any more. A unit's move read its whole
+	// sprite file before the animation and its basic part again after it
+	// (~640 ms a move on an A4000), and every combat flash or special effect
+	// read its file again; now only the first use reads it. Least recently
+	// used first out.
+	bool            AmigaKeepFull(uint32 index);
+	void            AmigaForget(uint32 index);
+	void            AmigaFlushKept();
+
+	std::vector<uint32> m_amigaKept;   // oldest first
+#endif
 };
 
 //----------------------------------------------------------------------------

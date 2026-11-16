@@ -61,6 +61,8 @@
 //	 stealth units. (13-Apr-2009 Maq)
 // - Changed occurances of UnitRecord::GetMaxHP to
 //   UnitData::CalculateTotalHP. (Aug 3rd 2009 Maq)
+// - Amiga builds: an idle unit shows its first frame only, also when its
+//   sprite stays fully loaded in the cache (SpriteGroupList).
 //
 //----------------------------------------------------------------------------
 
@@ -412,6 +414,14 @@ void UnitActor::AddIdle()
 	if (!animation) {
 		animation = CreateAnim(UNITACTION_MOVE);
 	}
+#if defined(CTP2_AMIGA_BUILD)
+	// What a basic load gives (one frame): the group may have stayed fully
+	// loaded after this actor's move (SpriteGroupList's cache), and an idle
+	// animation of all its frames would redraw the unit all the time.
+	if (animation && m_loadType != LOADTYPE_FULL) {
+		animation->MakeBasic();
+	}
+#endif
 
 	Action * idleAction = Action::CreateUnitAction(UNITACTION_IDLE, animation);
 	AddAction(idleAction);

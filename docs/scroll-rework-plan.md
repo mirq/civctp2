@@ -1,8 +1,8 @@
 # Plan: faster map scrolling
 
 Status: stages 1 to 4 are done (stage 4 as an option that is off by
-default), with the map-edge fixes, the test key and a faster fog-of-war tile
-path. Stage 5 is analysed, not finished. See "Results so far" at the end.
+default), stage 5 in part (solid rows), with a repeatable benchmark, a
+yardstick and a self-check. See "Results so far" at the end.
 
 ## Why
 
@@ -214,20 +214,90 @@ marks drawn into the kept part of the map without being marked as changed
 corrected when the scroll ends, as before; the comparison could not see this
 while the frame lacked them too.
 
+### Third round: a repeatable benchmark, solid rows, yardstick, self-check
+
+Ideas taken from BobrHopper's blitter and its measuring code.
+
+- **A repeatable benchmark** (`ENV:CTP2_BENCH=1`). The game starts itself
+  from the main menu on a fixed world (`ENV:CTP2_SEED`, 12345 in a
+  benchmark), explores the map, scrolls a fixed number of tiles each way in
+  single-tile steps (first with every tile under the fog of war, then right
+  and left with everything in sight), writes the times as `Bench:` lines to
+  `ctp2.log`, writes three pictures (`RAM:bench_fog.ppm`, `bench_sight.ppm`,
+  `bench_end.ppm`) and quits. Two runs of the same build agree within about
+  3%; the pictures of two builds can be compared byte for byte. All earlier
+  figures in this document came from a different random map each run.
+- **Solid rows** (`AmigaSolidRows` in `tiledraw.cpp`). For each base tile the
+  rows without a transition marker are worked out once and copied in long
+  words, with no test per pixel; the fog path halves them two pixels at a
+  time. `ENV:CTP2_SOLIDROWS=0` turns it off. The pictures are identical with
+  it on and off. Tile painting fell from 26 to 19 ms a step under fog (27%)
+  and from 19 to 17 ms in sight (12%); a whole step by about 7% and 3%. That
+  is less than the third to a half first expected.
+- **Yardstick** (with `ENV:CTP2_PERF`). When the screen opens, one log line
+  gives MB/s for a copy in fast RAM, the compare, and writes to the card
+  plain and through the pixel conversion. In Amiberry: copy 65, compare 36,
+  card 65 plain and 22 through the conversion. On the A4000 the same line
+  answers what the card's write rate really is, and whether
+  `CTP2_STRIPWRITE` should be on.
+- **Self-check** (`ENV:CTP2_CHECK=n`). After every n-th copy the card is read
+  back and compared with the picture as it should be; and at the end of a
+  scroll the map as the steps left it is compared with the map painted anew
+  (the first three differences also as pictures, `RAM:ctp2check<n>.ppm`).
+  It costs about 35 ms a step with n = 8. On the benchmark it reports:
+  the card right in all but 2 of about 130 copies (30 pixels each time, the
+  unmarked overlay marks known from before); and after each scroll 2,400 to
+  3,800 pixels of the map that differ from a fresh repaint. The picture shows
+  all of them on sprites: the shadows of goods are darker after a scroll
+  (drawn again over themselves in the strip's margin), and the selected unit
+  animates. The terrain itself matches exactly, which is the check that the
+  origin moves, the rectangle shifts and the direct copy are right.
+
+The benchmark on the fixed map, gcc 6.5, ms a step (single-tile steps):
+
+| | right | left | down | up |
+|---|---|---|---|---|
+| under fog, before solid rows | 102 | 103 | 74 | 75 |
+| under fog, with solid rows | 94 | 96 | 71 | 70 |
+| in sight, before | 84 | 92 | | |
+| in sight, with | 81 | 90 | | |
+
+Where a step under fog goes now (right, ms): tiles 19, overlays 11, sprites
+8, per-tile walks 11, the scroll loop 43 (of which the compare 22).
+
+### The compiler
+
+The 68060 build also compiles and runs with m68k-amigaos-gcc 16.2. On the
+benchmark (before solid rows; one run each, the gcc 6.5 run repeated and
+within 3%):
+
+| | gcc 6.5 -O2 | gcc 16.2 -O2 | gcc 16.2 -O3 |
+|---|---|---|---|
+| start to menu, s | 58.0 | 56.0 | 54.6 |
+| menu to map, s | 26.2 | 21.8 | 21.4 |
+| step right / left, ms | 101 / 108 | 92 / 101 | 93 / 95 |
+| step down / up, ms | 76 / 80 | 70 / 68 | 68 / 65 |
+| executable, MB | 7.5 | 7.7 | 9.1 |
+
+So gcc 16.2 is 7–15% faster in scrolling and about 17% faster loading a
+game; `-O3` adds little over `-O2` for 1.4 MB more. What the build needs is
+in `overview.md`. gcc 6.5 is still the default.
+
 Open:
 
-- **Stage 5.** Over land, tiles and overlays are about 75 ms of a 170 ms
-  step. `DrawTransitionTile` costs about 0.3 µs a pixel, two to three times
-  a plain copy. Its inner loop and the overlay passes (`RepaintHats`,
-  `RepaintBorders`, `RepaintImprovements`) are the next thing to look at.
-  A reliable comparison needs the same map each time (a saved game), which
-  the F4 quick start does not give.
-- The per-tile walks `OffsetLayerSprites` and `RepaintLayerSprites` (about
-  20 ms a step together) visit every tile in view.
+- The overlay passes (`RepaintHats`, `RepaintBorders`,
+  `RepaintImprovements`) and the per-tile walks `OffsetLayerSprites` and
+  `RepaintLayerSprites` (about 30 ms a step together).
+- The compare (22 ms a step) against writing the strip directly
+  (`CTP2_STRIPWRITE`): decide with the yardstick's figures from the A4000.
 - For a scroll up or down the shadow of the column rectangles is shifted by
-  copying (about 21 ms a step); only full-width rectangles use the row
-  pointers.
-- Stage 4's default waits for the write rate measured on the A4000.
+  copying; only full-width rectangles use the row pointers.
+- Goods' shadows are drawn twice in the strip's margin during a scroll (the
+  self-check shows it). It was so before this work.
+- In the emulator the plain copy loops are bound by instructions, not by
+  memory (libnix `memcpy` 167 MB/s against 65 for the long-word loop), which
+  a real 68060 is not: speed-ups of copies measured there may not carry
+  over.
 - Nothing here is measured on real hardware.
 
 ## Not planned

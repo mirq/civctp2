@@ -283,9 +283,10 @@ void *_memalign_r(struct _reent *r, size_t align, size_t size)
 /* After every other destructor (os/amiga/warpos/warpos-etrel.ld puts this
  * file's .dtors entry last): the program's objects are gone. A free() after
  * this (newlib's exit list) is ignored. */
-static void amiga_malloc_close(void) __attribute__((destructor));
+void amiga_malloc_close(void) __attribute__((destructor));
 
-static void amiga_malloc_close(void)
+/* Not static: amiga_exit_skip_destructors (amiga_platform.c) keeps it. */
+void amiga_malloc_close(void)
 {
 	amiga_malloc_exit();
 	s_closed = 1;

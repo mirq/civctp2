@@ -25,6 +25,7 @@
 // - Option added to include multiple data directories.
 // - Corrected crash when loading a saved game (only in release version?).
 // - Removed double Assert reporting when LoadSprite fails.
+// - Amiga builds: groups stay fully loaded after their animations (a cache).
 //
 //----------------------------------------------------------------------------
 
@@ -41,6 +42,11 @@
 #include "Sprite.h"
 #include "StrDB.h"                  // g_theStringDB
 #include "UnitSpriteGroup.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include <algorithm>
+#include <stdlib.h>
+#include "amiga_platform.h"     // amiga_env_value, amiga_log
+#endif
 
 extern ProgressWindow * g_theProgressWindow;
 
@@ -242,6 +248,17 @@ bool SpriteGroupList::ReleaseSprite(uint32 index, LOADTYPE loadType)
 
         if (basicRefs == 0)
         {
+#if defined(CTP2_AMIGA_BUILD)
+			// An effect (combat flash, special effect) has no basic users:
+			// its group stays, fully loaded, for the next one.
+			if (groupLoadType == LOADTYPE_FULL
+			 && m_spriteList[index]->GetType() == GROUPTYPE_EFFECT
+			 && AmigaKeepFull(index))
+			{
+				return false;
+			}
+			AmigaForget(index);
+#endif
 		    delete m_spriteList[index];
             m_spriteList[index] = NULL;
 		    return true;
@@ -250,6 +267,12 @@ bool SpriteGroupList::ReleaseSprite(uint32 index, LOADTYPE loadType)
 	    {
 		    if (groupLoadType == LOADTYPE_FULL)
 		    {
+#if defined(CTP2_AMIGA_BUILD)
+				if (AmigaKeepFull(index))
+				{
+					return false;
+				}
+#endif
 			    m_spriteList[index]->DeallocateStorage();
 			    m_spriteList[index]->DeallocateFullLoadAnims();
 
@@ -276,8 +299,110 @@ bool SpriteGroupList::ReleaseSprite(uint32 index, LOADTYPE loadType)
 
 
 
+#if defined(CTP2_AMIGA_BUILD)
+namespace
+{
+	int AmigaCacheSetting(char const * name, int fallback)
+	{
+		char value[16];
+		int  size = fallback;
+		if (amiga_env_value(name, value, sizeof(value)))
+		{
+			size = atoi(value);
+			if (size < 0)   size = 0;
+			if (size > 255) size = 255;
+		}
+		amiga_log("Sprite cache: %d fully loaded groups (ENV:%s)\n", size, name);
+		return size;
+	}
+
+	// Units (ENV:CTP2_SPRITECACHE, default 8) and effects
+	// (ENV:CTP2_EFFECTCACHE, default 4: some are megabytes in memory).
+	size_t AmigaSpriteCacheSize(GROUPTYPE type)
+	{
+		static int s_units   = -1;
+		static int s_effects = -1;
+		if (type == GROUPTYPE_EFFECT)
+		{
+			if (s_effects < 0) s_effects = AmigaCacheSetting("CTP2_EFFECTCACHE", 4);
+			return static_cast<size_t>(s_effects);
+		}
+		if (s_units < 0) s_units = AmigaCacheSetting("CTP2_SPRITECACHE", 8);
+		return static_cast<size_t>(s_units);
+	}
+
+	// A kept group no longer kept: an effect's (no basic users) is deleted,
+	// another goes back to its basic load. True: deleted.
+	bool AmigaDropKept(SpriteGroupList & list, SpriteGroup * group, uint32 index)
+	{
+		if (!group || group->GetLoadType() != LOADTYPE_FULL || group->GetFullLoadRefCount() != 0)
+		{
+			return false;   // in use again: it is kept once more when let go
+		}
+		if (group->GetRefCount() == 0)
+		{
+			delete group;
+			return true;
+		}
+		group->DeallocateStorage();
+		group->DeallocateFullLoadAnims();
+		(void) list.LoadSprite(index, group->GetType(), LOADTYPE_BASIC, (GAME_ACTION) 0);
+		return false;
+	}
+}
+
+// The group at index stays fully loaded, the most recently used one. Those
+// beyond the cache's size go back to their basic load, the oldest first,
+// unless an actor uses their full load again just now.
+bool SpriteGroupList::AmigaKeepFull(uint32 index)
+{
+	GROUPTYPE const type = m_spriteList[index]->GetType();
+	size_t const    size = AmigaSpriteCacheSize(type);
+	if (size == 0) return false;
+
+	AmigaForget(index);
+	m_amigaKept.push_back(index);
+
+	// A list holds one kind of group, so its own kept ones count.
+	while (m_amigaKept.size() > size)
+	{
+		uint32 const old = m_amigaKept.front();
+		m_amigaKept.erase(m_amigaKept.begin());
+		if (AmigaDropKept(*this, m_spriteList[old], old))
+		{
+			m_spriteList[old] = NULL;
+		}
+	}
+	return true;
+}
+
+void SpriteGroupList::AmigaForget(uint32 index)
+{
+	std::vector<uint32>::iterator i = std::find(m_amigaKept.begin(), m_amigaKept.end(), index);
+	if (i != m_amigaKept.end()) m_amigaKept.erase(i);
+}
+
+// All kept groups back to their basic load.
+void SpriteGroupList::AmigaFlushKept()
+{
+	std::vector<uint32> kept;
+	kept.swap(m_amigaKept);
+	for (size_t n = 0; n < kept.size(); ++n)
+	{
+		if (AmigaDropKept(*this, m_spriteList[kept[n]], kept[n]))
+		{
+			m_spriteList[kept[n]] = NULL;
+		}
+	}
+}
+#endif
+
 void SpriteGroupList::RefreshBasicLoads(GROUPTYPE groupType)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// The kept groups are basic loads to the game: they are read again too.
+	AmigaFlushKept();
+#endif
 
 	ProgressWindow::BeginProgress(
 		g_theProgressWindow,

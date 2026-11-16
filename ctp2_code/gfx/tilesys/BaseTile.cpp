@@ -49,6 +49,10 @@ BaseTile::BaseTile()
     m_tileData      (NULL),
     m_hatData       (NULL)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	m_amigaSolidRows[0] = m_amigaSolidRows[1] = 0;
+	m_amigaSolidKnown   = false;
+#endif
 }
 
 BaseTile::~BaseTile()

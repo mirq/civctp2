@@ -35,6 +35,8 @@
 // - Removed some unused items
 // - Changed occurances of UnitRecord::GetMaxHP to
 //   UnitData::CalculateTotalHP. (Aug 3rd 2009 Maq)
+// - Amiga builds: a re-centre shifts the part of the view that stays.
+// - Amiga builds: no special effect where the player does not see.
 //
 //----------------------------------------------------------------------------
 
@@ -388,8 +390,18 @@ protected:
 
 	static void CenterMap(const MapPoint &pos)
 	{
+#if defined(__AUI_USE_AMIGA__)
+		// The part of the view that stays is shifted, not painted again,
+		// and a view that did not move is left alone (TiledMap). With the
+		// radar map's render, a centring took ~0.5 s on an A4000.
+		RECT const before = g_tiledMap->GetMapViewRect();
+		g_radarMap->CenterMap(pos);
+		sint32 const shifted = g_tiledMap->AmigaRefreshMoved(before);
+		if (shifted < 0) return;
+#else
 		g_radarMap->CenterMap(pos);
 		g_tiledMap->Refresh();
+#endif
 		g_tiledMap->InvalidateMap();
 		g_tiledMap->InvalidateMix();
 		background_draw_handler(g_background);
@@ -2694,6 +2706,17 @@ void DirectorImpl::AddSpecialEffect(const MapPoint &pos, sint32 spriteID, sint32
 	    ){ // center on pos if generally visible but not in current view
 	    AddCenterMap(pos);
 	    }
+#if defined(__AUI_USE_AMIGA__)
+	// Where the player does not see, Execute shows and plays nothing: the
+	// effect's sprite file (up to 2 MB, ~2 s from an A4000's disk) is not
+	// read for it. The game's vision is ahead of the director's queue, so
+	// it is no older here than at Execute.
+	if (!g_player[g_selected_item->GetVisiblePlayer()]
+	 || !g_player[g_selected_item->GetVisiblePlayer()]->IsVisible(pos))
+	{
+		return;
+	}
+#endif
 	DQActionSpecialEffect *action = new DQActionSpecialEffect(pos, spriteID, soundID);
 	m_actionQueue->AddTail(action);
 }

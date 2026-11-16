@@ -67,15 +67,96 @@ int ldlif_find_localized_file(const char *filename, char * fullpath)
 }
 
 
+#if defined(CTP2_AMIGA_BUILD)
+// An index of the stored names beside the StringHash (which keeps owning
+// them): open addressing on a case-folded FNV-1a hash. StringHash's key is a
+// sum of character pairs modulo 1024, so similar names share chains, each
+// entry compared with a case-insensitive compare; looking names up was the
+// largest single part of building a window from its layout on a 68060.
+namespace
+{
+	char **  s_nameIndex     = NULL;
+	uint32_t s_nameIndexSize = 0;    // a power of two
+	uint32_t s_nameIndexUsed = 0;
+
+	inline uint32_t ldlif_name_hash(const char * name)
+	{
+		uint32_t h = 2166136261u;
+		for (; *name; ++name)
+		{
+			uint32_t c = (unsigned char) *name;
+			if (c - 'A' < 26u) c += 'a' - 'A';
+			h = (h ^ c) * 16777619u;
+		}
+		return h;
+	}
+
+	void ldlif_name_index_put(char * name)
+	{
+		uint32_t i = ldlif_name_hash(name) & (s_nameIndexSize - 1);
+		while (s_nameIndex[i]) i = (i + 1) & (s_nameIndexSize - 1);
+		s_nameIndex[i] = name;
+	}
+
+	void ldlif_name_index_add(char * name)
+	{
+		if (2 * (s_nameIndexUsed + 1) > s_nameIndexSize)
+		{
+			char **        old     = s_nameIndex;
+			uint32_t const oldSize = s_nameIndexSize;
+			s_nameIndexSize = oldSize ? 2 * oldSize : 8192;
+			s_nameIndex     = new char *[s_nameIndexSize];
+			memset(s_nameIndex, 0, s_nameIndexSize * sizeof(char *));
+			for (uint32_t n = 0; n < oldSize; ++n)
+			{
+				if (old[n]) ldlif_name_index_put(old[n]);
+			}
+			delete [] old;
+		}
+		ldlif_name_index_put(name);
+		++s_nameIndexUsed;
+	}
+
+	void ldlif_name_index_clear()
+	{
+		delete [] s_nameIndex;
+		s_nameIndex     = NULL;
+		s_nameIndexSize = 0;
+		s_nameIndexUsed = 0;
+	}
+}
+
+char *ldlif_findnameptr(const char *name)
+{
+	if (!s_nameIndexSize) return NULL;
+	uint32_t i = ldlif_name_hash(name) & (s_nameIndexSize - 1);
+	for (char * stored; (stored = s_nameIndex[i]) != NULL; i = (i + 1) & (s_nameIndexSize - 1))
+	{
+		if (strcasecmp(stored, name) == 0) return stored;
+	}
+	return NULL;
+}
+#endif
+
 char *ldlif_getnameptr(const char *name)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	if (char * stored = ldlif_findnameptr(name))
+	{
+		return stored;
+	}
+#else
 	const LDLString *str = s_ldlStringHash->Get(name);
 	if(str) {
 		return str->GetName();
 	}
+#endif
 
 	LDLString *newstr = new LDLString(name);
 	s_ldlStringHash->Add(newstr);
+#if defined(CTP2_AMIGA_BUILD)
+	ldlif_name_index_add(newstr->GetName());
+#endif
 	return newstr->GetName();
 }
 
@@ -251,6 +332,9 @@ void ldlif_deallocate_stuff()
 
 	delete s_ldlStringHash;
 	s_ldlStringHash = NULL;
+#if defined(CTP2_AMIGA_BUILD)
+	ldlif_name_index_clear();
+#endif
 
 	delete s_blockTree;
 	s_blockTree = NULL;

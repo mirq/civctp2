@@ -28,6 +28,7 @@
 // - Made the algorithm behave more like A-star (recompute an open node when a
 //   new path is found that has a lower cost).
 // - Made Win32 Optimized Test configuration compile. - Jul 19th 2005 Martin Gühmann
+// - Amiga builds: the cursor moves on during long searches.
 //
 //----------------------------------------------------------------------------
 
@@ -42,6 +43,10 @@
 #ifdef PRINT_COSTS
 #include "gfx_options.h"
 #include "tiledmap.h"
+#endif
+
+#if defined(__AUI_USE_AMIGA__)
+void amiga_ui_busy_tick(void);   // ui/aui_amiga/aui_amigaui.cpp: the cursor
 #endif
 
 sint32 g_search_count;
@@ -325,6 +330,9 @@ bool Astar::FindPath
 	{
 		loop_count++;
 		Assert(loop_count < 1400000); // Ultra Gigantic problem
+#if defined(__AUI_USE_AMIGA__)
+		if ((loop_count & 255) == 0) amiga_ui_busy_tick();   // the cursor moves on
+#endif
 
 		float past_cost = best->m_past_cost + best->m_entry_cost;
 		best->SetExpanded(true);

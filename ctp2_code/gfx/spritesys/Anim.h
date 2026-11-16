@@ -25,6 +25,7 @@
 // Modifications from the original Activision code:
 //
 // - Repaired funny combination of protected data with non-virtual destructor.
+// - Amiga builds: MakeBasic.
 //
 //----------------------------------------------------------------------------
 
@@ -91,6 +92,13 @@ public:
 	void   Rewind();
 
 	void   Export(FILE * file);
+
+#if defined(CTP2_AMIGA_BUILD)
+	// The first frame only, as a basic load reads the animation
+	// (SpriteFile::ReadAnimDataBasic): for an idle unit whose sprite stays
+	// fully loaded in the cache (SpriteGroupList).
+	void   MakeBasic();
+#endif
 
 protected:
 	friend class SpriteFile;

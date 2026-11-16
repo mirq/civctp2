@@ -252,16 +252,64 @@ static uint32                       s_lastscrolltick=0;
 // steps come that slowly each one goes further: two tiles across, four rows
 // (one tile's height) down. Steps less than 120 ms apart stay single.
 extern bool g_amigaScrollOneAxis;   // tiledmap.cpp
+int  gamefile_AmigaSaveStep(int budgetMs);   // gs/fileio/GameFile.cpp
 
 // Returns false (no step) when the scroll turns from across to up or down or
 // back within a scroll loop: that ends the loop, whose end paints the whole map
 // again, and the next loop goes the new way. Within a loop the steps keep to
 // one axis, so each shifts only what is on the screen (tiledmap.cpp).
+// ENV:CTP2_BENCH: a run that is the same every time, for comparing builds.
+// With ENV:CTP2_SEED (default 12345 in a benchmark) the quick start makes
+// the same world; the game then starts itself from the main menu, explores
+// the whole map, scrolls a fixed number of tiles each way with the keys'
+// own code, writes the times to ctp2.log ("Bench: ...") and quits.
+struct AmigaBench
+{
+	int     on;             // -1: not asked yet
+	int     state;
+	int     phase;          // which way: 0 right, 1 left, 2 down, 3 up
+	uint32  mark;           // when the state began
+	bool    scrolling;      // a phase's steps are being counted
+	bool    started;
+	bool    finished;
+	sint32  targetTiles;
+	sint32  tiles;
+	sint32  steps;
+	uint32  t0;
+	uint32  elapsed;
+};
+static AmigaBench s_bench = { -1, 0, 0, 0, false, false, false, 0, 0, 0, 0, 0 };
+
+extern CivApp * g_civApp;
+
+static void AmigaBenchFinish(uint32 now)
+{
+	s_bench.elapsed   = now - s_bench.t0;
+	s_bench.scrolling = false;
+	s_bench.finished  = true;
+	g_civApp->StopKeyboardScrolling(0);
+}
+
 static bool AmigaScrollMap(sint32 deltaX, sint32 deltaY)
 {
 	static uint32 s_lastStep = 0;
 	static int    s_axis     = 0;
 	uint32 const now  = GetTickCount();
+	if (s_bench.scrolling)
+	{
+		// From the first step's beginning to the beginning of the one after
+		// the last: whole steps, with their composing and copying.
+		if (!s_bench.started)
+		{
+			s_bench.started = true;
+			s_bench.t0      = now;
+		}
+		else if (s_bench.tiles >= s_bench.targetTiles)
+		{
+			AmigaBenchFinish(now);
+			return false;
+		}
+	}
 	int const    axis = deltaX ? 1 : 2;
 	if (s_axis && s_axis != axis && now - s_lastStep < 500)
 	{
@@ -269,7 +317,9 @@ static bool AmigaScrollMap(sint32 deltaX, sint32 deltaY)
 		return false;
 	}
 	s_axis = axis;
-	bool const   slow = s_lastStep && now - s_lastStep >= 120 && now - s_lastStep < 1000;
+	// (The steps of a benchmark are all one tile: the same work whatever the speed.)
+	bool const   slow = !s_bench.scrolling
+	                 && s_lastStep && now - s_lastStep >= 120 && now - s_lastStep < 1000;
 	s_lastStep = now;
 	if (slow)
 	{
@@ -282,6 +332,18 @@ static bool AmigaScrollMap(sint32 deltaX, sint32 deltaY)
 	// the mouse held (~26 ms a turn, the game standing still meanwhile).
 	bool const moved = g_tiledMap->ScrollMap(deltaX, deltaY);
 	g_amigaScrollOneAxis = false;
+	if (s_bench.scrolling)
+	{
+		if (moved)
+		{
+			++s_bench.steps;
+			s_bench.tiles += abs(deltaX) + abs(deltaY);
+		}
+		else
+		{
+			AmigaBenchFinish(GetTickCount());   // the map's edge
+		}
+	}
 	return moved;
 }
 #endif
@@ -582,6 +644,10 @@ void ui_HandleMouseWheel(sint16 delta)
 	else
 	{
 		// Scroll main map (when available)
+#if defined(__AUI_USE_AMIGA__)
+		RECT const viewBefore = (g_civApp->IsGameLoaded() && g_tiledMap)
+		                      ? g_tiledMap->GetMapViewRect() : RECT();
+#endif
 		bool isMapScrolled =
 		    g_civApp->IsGameLoaded() &&
 		    g_tiledMap &&
@@ -590,8 +656,17 @@ void ui_HandleMouseWheel(sint16 delta)
 		if(isMapScrolled)
 		{
 			g_tiledMap->RetargetTileSurface(NULL);
+#if defined(__AUI_USE_AMIGA__)
+			// One notch is two rows: the map's surface shifted, the rows
+			// it uncovered painted (Refresh painted every tile in view).
+			if (g_tiledMap->AmigaRefreshMoved(viewBefore) >= 0)
+			{
+				g_tiledMap->InvalidateMap();
+			}
+#else
 			g_tiledMap->Refresh();
 			g_tiledMap->InvalidateMap();
+#endif
 			g_tiledMap->ValidateMix();
 		}
 	}
@@ -630,6 +705,129 @@ bool compute_scroll_deltas(sint32 time,sint32 &deltaX,sint32 &deltaY)
 	deltaY &= 0xFFFFFFFE;
 
 	return retval;
+}
+
+void amiga_test_reveal(void);   // gfx/tilesys/tiledmap.cpp
+
+static void AmigaBenchTick(void)
+{
+	static const sint32       keys[4]    = { AUI_KEYBOARD_KEY_RIGHTARROW, AUI_KEYBOARD_KEY_LEFTARROW,
+	                                         AUI_KEYBOARD_KEY_DOWNARROW,  AUI_KEYBOARD_KEY_UPARROW };
+	static const char * const names[4]   = { "right", "left", "down", "up" };
+	static const sint32       targets[4] = { 48, 48, 32, 32 };
+	uint32 const              now        = GetTickCount();
+	extern sint32             g_fog_toggle;
+
+	// Phases 0-3: the four ways over a map that is explored but out of
+	// sight (every tile under the fog of war); 4 and 5: right and left with
+	// everything in sight. A picture is written before each set and at the
+	// end, to compare two builds' drawing pixel by pixel.
+	switch (s_bench.state)
+	{
+	case 0:     // the main menu: start a game with the last settings
+		if (initialplayscreen_QuickStart())
+		{
+			amiga_log("Bench: the menu at %lu ms\n", (unsigned long)amiga_ticks_ms());
+			s_bench.state = 1;
+		}
+		break;
+
+	case 1:     // the game loads
+		if (g_civApp && g_civApp->IsGameLoaded() && g_tiledMap && g_background)
+		{
+			amiga_log("Bench: the map at %lu ms\n", (unsigned long)amiga_ticks_ms());
+			s_bench.state = 2;
+			s_bench.mark  = now;
+		}
+		break;
+
+	case 2:     // a few seconds at rest, then the whole map explored
+		if (now - s_bench.mark >= 6000)
+		{
+			amiga_test_reveal();
+			s_bench.state = 3;
+			s_bench.mark  = now;
+			s_bench.phase = 0;
+		}
+		break;
+
+	case 3:     // its picture
+		if (now - s_bench.mark >= 3000)
+		{
+			amiga_snapshot_request("RAM:bench_fog.ppm");
+			s_bench.state = 4;
+			s_bench.mark  = now;
+		}
+		break;
+
+	case 4:     // at rest, then the next way
+		if (now - s_bench.mark >= 3000)
+		{
+			s_bench.targetTiles = targets[s_bench.phase & 3];
+			s_bench.tiles       = 0;
+			s_bench.steps       = 0;
+			s_bench.started     = false;
+			s_bench.finished    = false;
+			s_bench.scrolling   = true;
+			g_civApp->BeginKeyboardScrolling(keys[s_bench.phase & 3]);
+			s_bench.state = 5;
+		}
+		break;
+
+	case 5:     // scrolling (the steps are counted in AmigaScrollMap)
+		if (s_bench.finished)
+		{
+			amiga_log("Bench: %s%s %ld tiles in %ld steps, %lu ms: %lu ms a step\n",
+			          names[s_bench.phase & 3], s_bench.phase < 4 ? " (fog)" : " (in sight)",
+			          (long)s_bench.tiles, (long)s_bench.steps,
+			          (unsigned long)s_bench.elapsed,
+			          (unsigned long)(s_bench.steps ? s_bench.elapsed / s_bench.steps : 0));
+			s_bench.mark = now;
+			++s_bench.phase;
+			s_bench.state = (s_bench.phase == 4) ? 6 : (s_bench.phase == 6) ? 8 : 4;
+		}
+		break;
+
+	case 6:     // everything in sight
+		if (now - s_bench.mark >= 2000)
+		{
+			g_fog_toggle = 1;
+			amiga_test_reveal();
+			s_bench.state = 7;
+			s_bench.mark  = now;
+		}
+		break;
+
+	case 7:     // its picture
+		if (now - s_bench.mark >= 4000)
+		{
+			amiga_snapshot_request("RAM:bench_sight.ppm");
+			s_bench.state = 4;
+			s_bench.mark  = now;
+		}
+		break;
+
+	case 8:     // the picture after all the scrolling
+		if (now - s_bench.mark >= 3000)
+		{
+			amiga_snapshot_request("RAM:bench_end.ppm");
+			s_bench.state = 9;
+			s_bench.mark  = now;
+		}
+		break;
+
+	case 9:     // done: the last Perf lines, then out
+		if (now - s_bench.mark >= 4000)
+		{
+			amiga_log("Bench: done at %lu ms\n", (unsigned long)amiga_ticks_ms());
+			gDone = TRUE;
+			s_bench.state = 10;
+		}
+		break;
+
+	default:
+		break;
+	}
 }
 
 bool ui_CheckForScroll(void)
@@ -1596,9 +1794,21 @@ int main(int argc, char **argv)
 	{
 		return 20;
 	}
+	{
+		// ENV:CTP2_SEED: the same world every time (a benchmark has one
+		// anyway: 12345).
+		extern sint32 g_oldRandSeed;
+		char value[16];
+		if (amiga_env_value("CTP2_SEED", value, sizeof(value))) g_oldRandSeed = atoi(value);
+		else if (amiga_env_flag("CTP2_BENCH"))                  g_oldRandSeed = 12345;
+	}
 #if !defined(CTP2_AMIGA_060)
 	// 68060: from libnix's exit list, after the C++ destructors (amiga_platform.c).
 	atexit(amiga_platform_exit);
+#endif
+#if defined(CTP2_AMIGA_WOS)
+	// Before the destructors, which startupwos.o's _exit runs first.
+	atexit(amiga_exit_skip_destructors);
 #endif
 #endif
 	atexit(AtExitProc);
@@ -1609,6 +1819,9 @@ int main(int argc, char **argv)
 		DoFinalCleanup(r);
 	}
 
+#if defined(CTP2_AMIGA_WOS)
+	amiga_exit_skip_destructors();
+#endif
 	return 0;
 }
 
@@ -1894,6 +2107,10 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 		uint64_t const perfT0 = perf ? amiga_ticks_us() : 0;
 #endif
 		g_civApp->Process();
+#if defined(CTP2_AMIGA_BUILD)
+		// The turn's autosave, a little each frame (gs/fileio/GameFile.cpp).
+		gamefile_AmigaSaveStep(15);
+#endif
 #if defined(__AUI_USE_AMIGA__)
 		if (perf)
 		{
@@ -2079,6 +2296,9 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 		{
 			gDone = TRUE;
 		}
+
+		if (s_bench.on < 0) s_bench.on = amiga_env_flag("CTP2_BENCH") ? 1 : 0;
+		if (s_bench.on) AmigaBenchTick();
 
 		// The sound ring, ahead of the player.
 		amiga_audio_update();

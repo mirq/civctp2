@@ -47,7 +47,9 @@ data (from the CD or GOG, merged into the repository's `ctp2_data` and
 
 Needs: AmigaOS 3.x, `cybergraphics.library` V41+, a 15 or 16-bit RTG mode of at
 least the game's resolution, `ahi.device` V4 for sound (optional), and for
-WarpOS `powerpc.library`. 128 MB of fast RAM is the target. MorphOS (any
+WarpOS `powerpc.library`. 128 MB of fast RAM is the target. On a Sonnet card
+(SonnetAmiga `powerpc.library`) run `C:InitPPC` once before `ctp2.wos`: without
+it the program can hang in its loader or freeze the machine. MorphOS (any
 version with CGX V50 and AHI) runs `ctp2.mos` in a 16-bit screen of its own.
 
 The program enters its own drawer (`PROGDIR:`) and keeps everything there;
@@ -62,9 +64,21 @@ CTRL-C quits.
 | `CTP2_UIPRELOAD` | when the main windows (build manager, city window, managers, diplomacy...) are built: `lazy` (default) at their first opening, `start` (or `preload`) while a game loads (a few seconds longer), `idle` (or `lazypreload`) one at a time on the map while the mouse and keys rest |
 | `CTP2_SCRUB` | full rows sent again to the card every 80 ms, past the comparison (default 4, `0`: none) |
 | `CTP2_SCROLLSLACK` | spare pixels across round the map's surface, so that a scroll moves no memory (default 1024, about 11 MB at 1024x768; `0`: none) |
+| `CTP2_SPRITECACHE` | unit sprite groups kept fully loaded after their animations, least recently used out first (default 8; `0`: none, every move reads the sprite file twice) |
+| `CTP2_BGSAVE` | `0`: the turn's autosave is compressed and written at once, as before (default: in the background, a few ms a frame; finished before any other save, load or quit) |
+| `CTP2_SAVELEVEL` | zlib level of saves and autosaves, 0 (stored, larger file) to 9 (default 1) |
+| `CTP2_PROF` | `1` (68060): a sampling profiler (`2`: follow frame pointers; `CTP2_PROF_EVENT`=name: only that game event); CTRL-E (`break <process> E`) writes `RAM:ctp2prof.bin`, resolved with `host/amiga-prof.py` (see docs/performance.md) |
+| `CTP2_EFFECTCACHE` | effect sprite groups (combat flash, special effects) kept loaded after use (default 4; `0`: none, each effect reads its file again) |
 | `CTP2_DIRECTMAP` | `0`: the map goes through the composed frame, as before (default: straight from its own surface to the card) |
 | `CTP2_STRIPWRITE` | `1`: what a scroll step uncovers goes to the card without the compare (default off) |
+| `CTP2_BENCH` | `1`: a benchmark that runs by itself on a fixed world (`CTP2_SEED`) and quits; `Bench:` lines in `ctp2.log` |
+| `CTP2_CHECK` | n: every n-th copy the card is compared with the picture, each scroll with a fresh repaint; `Check:` lines |
+| `CTP2_SOLIDROWS` | `0`: tiles pixel by pixel, as before |
 | `CTP2_TEST` | `1`: F9 explores the whole map (display checks) |
+| `CTP2_CARDSETTLE` | WarpOS: ms the PowerPC waits after opening the screen before it writes the card's memory (default 500; the card clears the screen itself first). The first writes right after the mode switch froze an A4000 with a Sonnet behind the PCI bridge |
+| `CTP2_PPCCARD` | WarpOS, `0`: the PowerPC never touches the card's memory, every copy goes through WritePixelArray on the 68k (slow; a fallback for boards where direct writes fail) |
+| `CTP2_STEPDELAY` | WarpOS, `1`: each step of opening the screen logged, with 3 s between them (to find a freeze) |
+| `CTP2_DTORS` | `1`: the game's C++ static destructors run at exit (default: skipped; one of them, `Network::~Network`, never ended on real hardware) |
 | `CTP2_PERF` | `1`: timings of the frame's phases, the copies, scrolling, resource loads and slow game events every 3 s in `ctp2.log` |
 
 Pictures, fonts, sprites and sounds stay in memory once loaded (until less than 24 MB of fast memory is free), so a window opens faster the second time; 128 MB or more is assumed.
