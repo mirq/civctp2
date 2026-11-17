@@ -11,6 +11,11 @@ Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS), MorphOS and ARO
 | CTP2-Linux-x86_64-@VERSION@.tar.gz | Linux (SDL2) build |
 | SHA256SUMS.txt | Checksums |
 
+## New in 0.6
+
+- **AI turns faster again, the same AI.** The route finding's commonest steps are cheaper (the next map cell is worked out in place instead of by a call, and what a search's remembered answers depend on is checked once per search), and each empire's centre is worked out again only when the terrain its routes cross changes, not whenever a road is finished anywhere. A late-game round (turn 191, six computer players, 68060 at 50 MHz, enemy moves not shown) takes 107 s, against 117 s in 0.5 and 251 s before 0.4. The computer players still make exactly the same moves (checked save against save).
+- Tip: with **enemy moves shown**, most of a late round is the moves themselves, each shown for a fixed time. Moving the **unit speed** slider (Graphics options) to the right takes a late round from about 230 s to about 160 s.
+
 ## New in 0.5
 
 - **Loading a saved game during a game no longer hangs.** Loading a save from inside a running game (and so also going back to the main menu) stopped at the start of the loading bar: the cleanup waited for a network thread that the Amiga versions never start. Thanks to **Fazior** for finding this bug.
