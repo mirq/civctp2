@@ -116,6 +116,12 @@ public:
     void Compute_Needed_Troop_Flow();
 
     Utility Compute_Agent_Matching_Value(const Agent_ptr agent_ptr) const;
+#if defined(CTP2_AMIGA_BUILD)
+    // The same while a match pass is open, with the agent's facts kept
+    // for the pass (Agent::Get_Match_Facts).
+    Utility Compute_Agent_Matching_Value_Cached(const Agent_ptr agent_ptr) const;
+    bool    Pretest_Bid_Cached(const Agent_ptr agent_ptr, const MapPoint & target_pos) const;
+#endif
 
     Utility Get_Initial_Priority() const;
     Utility Compute_Raw_Priority();
@@ -222,6 +228,14 @@ public:
     void SetSubGoal(Goal* subGoal) { Assert(this->Get_Target_Pos() == subGoal->Get_Target_Pos());  m_sub_goal = subGoal; }
     Goal* GetSubGoal() const { return m_sub_goal; }
     size_t GetSubGoalCount() const { return m_sub_goal != nullptr ? m_sub_goal->m_agents.size() : 0; }
+
+#if defined(CTP2_AMIGA_BUILD)
+    // The fields operator== compares, as stored (Scheduler's goal index).
+    PLAYER_INDEX     Key_Player() const { return m_playerId; }
+    uint32           Key_Army()   const { return m_target_army.m_id; }
+    uint32           Key_City()   const { return m_target_city.m_id; }
+    const MapPoint & Key_Pos()    const { return m_target_pos; }
+#endif
 
     void SetBasics(sint8 playerId, GOAL_TYPE type, const Unit & city)    { m_playerId = playerId; m_goal_type = type; m_target_city      = city; m_target_army.m_id = 0;    m_target_pos.Set(0, 0); }
     void SetBasics(sint8 playerId, GOAL_TYPE type, const Army & army)    { m_playerId = playerId; m_goal_type = type; m_target_city.m_id = 0;    m_target_army      = army; m_target_pos.Set(0, 0); }

@@ -144,8 +144,21 @@ public:
 
 
 
+#if defined(CTP2_AMIGA_BUILD)
+    // Inline: path searches compare points millions of times a turn, and a
+    // call costs more than the comparison.
+    bool operator == (const MapPoint &test_me) const
+    {
+        return ((x == test_me.x) && (y == test_me.y));
+    }
+    bool operator != (const MapPoint &test_me) const
+    {
+        return ((x != test_me.x) || (y != test_me.y));
+    }
+#else
     bool operator == (const MapPoint &test_me) const;
     bool operator != (const MapPoint &test_me) const;
+#endif
     MapPoint & operator += (const MapPoint &rhs);
     MapPoint & operator -= (const MapPoint &rhs);
     MapPoint & operator += (const MapPointData &rhs);

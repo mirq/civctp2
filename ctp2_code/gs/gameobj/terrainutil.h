@@ -58,6 +58,11 @@ const TerrainImprovementRecord::Effect *terrainutil_GetTerrainEffect(const Terra
 																	 const MapPoint &pos);
 const TerrainImprovementRecord::Effect *terrainutil_GetTerrainEffect(const TerrainImprovementRecord *rec,
 																	 sint32 terrainType);
+#if defined(CTP2_AMIGA_BUILD)
+// Amiga builds: the table behind terrainutil_GetTerrainEffect is built from
+// the databases; this drops it when they go (CivApp::CleanupAppDB).
+void terrainutil_AmigaForgetTables(void);
+#endif
 void terrainutil_DoVision(const MapPoint &point);
 bool terrainutil_PlayerHasAdvancesForTerrain(const TerrainImprovementRecord *rec, sint32 pl, sint32 terr);
 bool terrainutil_PlayerHasAdvancesFor(const TerrainImprovementRecord *rec, sint32 pl);

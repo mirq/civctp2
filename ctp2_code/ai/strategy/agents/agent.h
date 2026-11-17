@@ -59,6 +59,10 @@ class Agent;
 #include "Army.h"
 #include "ArmyData.h"
 #include "World.h"          // g_theWorld
+#if defined(CTP2_AMIGA_BUILD)
+#include <vector>
+class OrderRecord;
+#endif
 
 class Agent
 {
@@ -197,6 +201,55 @@ public:
 	bool IsNeededForGarrison() const { return m_neededForGarrison; };
 	void SetIsNeededForGarrison(bool neededForGarrison) { m_neededForGarrison = neededForGarrison; };
 
+#if defined(CTP2_AMIGA_BUILD)
+	// Amiga builds: what the scheduler asks the army again for every goal
+	// it scores the agent for (Goal::Compute_Agent_Matching_Value,
+	// Goal::Pretest_Bid). While a match pass is open the answers are worked
+	// out once per agent and pass. A pass is open only where no army changes
+	// (Scheduler::Process_Goal_Changes); outside one, nothing is kept.
+	// ENV:CTP2_AICACHE=0 turns it off.
+	struct MatchFacts
+	{
+		Utility      tieBreaker;          // The sort tie breaker of Compute_Agent_Matching_Value
+		double       minMove;             // ArmyData::MinMovementPoints
+		sint32       minFuel;             // ArmyData::GetMinFuel
+		sint32       transports;          // ArmyData::GetCargo
+		sint32       maxCargo;
+		sint32       emptyCargo;
+		sint32       num;                 // ArmyData::Num
+		sint32       maxAttack;           // CharacterizeArmy or CharacterizeCargo
+		uint32       movementType;        // Own movement type, the cargo's added if any
+		PLAYER_INDEX posOwner;            // g_theWorld->GetOwner at the army
+		PLAYER_INDEX cellOwner;           // its cell's GetOwner
+		bool         getCargo;            // ArmyData::GetCargo's result
+		bool         hasCargo;
+		bool         isAir;
+		bool         canSettle;
+		bool         canBeachAssault;
+		bool         canSomeCargoBeachAssault;
+		bool         canNukeCity;
+		bool         woundedNotObsolete;  // The wounded bonus test
+		bool         obsolete;            // The obsolete bonus test
+		bool         isSpecial;           // CharacterizeArmy or CharacterizeCargo
+		bool         hasZoc;
+	};
+
+	// ENV:CTP2_AICACHE=0 turns off this and Scheduler's goal index.
+	static bool AI_Cache_On();
+
+	static bool Match_Pass_Open() { return s_matchPass != 0; }
+	static void Open_Match_Pass();
+	static void Close_Match_Pass();
+
+	// Only while a pass is open, and only for a live agent.
+	const MatchFacts & Get_Match_Facts() const;
+
+	// Whether both TestOrder and CargoTestOrder are illegal for the
+	// order of a goal type (Pretest_Bid); while a pass is open, once per
+	// agent, goal type and pass.
+	bool Order_Is_Illegal(const OrderRecord * order_rec, sint32 goal_type) const;
+#endif
+
 #ifdef _DEBUG_SCHEDULER
 	bool ContainsArmyIn(const Agent_ptr agent) const { return Get_Army() == agent->Get_Army(); };
 #endif
@@ -214,6 +267,17 @@ private:
 	bool           m_can_be_executed;
 	bool           m_detached;
 	bool           m_neededForGarrison;
+
+#if defined(CTP2_AMIGA_BUILD)
+	mutable MatchFacts          m_facts;
+	mutable uint32              m_factsPass   = 0;  // The pass m_facts belong to, 0: none
+	mutable uint32              m_ordersPass  = 0;  // The pass m_orderIllegal belongs to
+	mutable std::vector<sint8>  m_orderIllegal;     // Per goal type: -1 not known yet, 0, 1
+
+	static uint32 s_matchPass;      // The open pass, 0: none
+	static uint32 s_passCounter;    // Numbers the passes
+	static sint32 s_matchCacheOn;   // -1: ENV not read yet
+#endif
 };
 
 #endif // __AGENT_H__

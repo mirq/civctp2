@@ -46,6 +46,9 @@
 #include <vector>
 #include <utility>
 #include <deque>
+#if defined(CTP2_AMIGA_BUILD)
+#include <set>
+#endif
 
 #include "c3debugstl.h"
 
@@ -160,6 +163,16 @@ public:
 
 	void Add_New_Goal(const Goal & new_goal);
 
+#if defined(CTP2_AMIGA_BUILD)
+	// Amiga builds: between these two, Add_New_Goal looks an equal goal up
+	// in an index of the goal type's list instead of walking the list (the
+	// goals for every city, army and explore point are offered again every
+	// turn). Only Add_New_Goal adds to the lists, so a list that is shorter
+	// than the index knows means a removal: the index is built again then.
+	void Begin_Goal_Batch();
+	void End_Goal_Batch();
+#endif
+
 	void Associate_Goals_With_Sub_Goals();
 
 	void Add_New_Agent(const Agent_ptr & new_agent);
@@ -243,6 +256,35 @@ private:
 	static uint32 m_neutralRegardCache;
 	static sint32 m_allyRegardCachedPlayer;
 	static uint32 m_allyRegardCache;
+
+#if defined(CTP2_AMIGA_BUILD)
+	// What Goal::operator== compares
+	struct GoalKey
+	{
+		sint32 type;
+		sint32 player;
+		uint32 army;
+		uint32 city;
+		sint32 x;
+		sint32 y;
+
+		bool operator < (const GoalKey & r) const
+		{
+			if (type   != r.type)   return type   < r.type;
+			if (player != r.player) return player < r.player;
+			if (army   != r.army)   return army   < r.army;
+			if (city   != r.city)   return city   < r.city;
+			if (x      != r.x)      return x      < r.x;
+			return y < r.y;
+		}
+	};
+	static GoalKey Goal_Key(const Goal & goal);
+
+	bool               m_goalBatch     = false;
+	sint32             m_goalIndexType = -1;    // The goal type m_goalIndex is for, -1: none
+	size_t             m_goalIndexSize = 0;     // The size of its list then
+	std::set<GoalKey>  m_goalIndex;
+#endif
 };
 
 #endif

@@ -289,6 +289,15 @@ public:
 	sint32 GetTerrain() const { return static_cast<sint32>(m_terrain_type); }
 	void SetMoveCost(double cost) { m_move_cost = (sint16)cost; }
 	double GetMoveCost() const { return double(m_move_cost); }
+
+#if defined(CTP2_AMIGA_BUILD)
+	// Amiga builds: changes whenever a cell's move cost changes for good
+	// (CalcTerrainMoveCost, a load). MapAnalysis keeps each empire's
+	// centre, found by paths over these costs, until it changes.
+	// (SetMoveCost is only the unit pathing's set-and-restore.)
+	static uint32 MoveCostVersion() { return s_moveCostVersion; }
+	static uint32 s_moveCostVersion;
+#endif
 	double GetFutureTerrainMoveCost() const;
 
 	bool GetIsChokePoint() const { return m_gf != 0; }

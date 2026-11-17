@@ -41,6 +41,8 @@
 //   improvement. (29-Jan-2009 Martin Gühmann)
 // - Merged in Squad, no need for an additional class, just wastes space. (29-Jan-2009 Martin Gühmann)
 // - Removed last Squad remainings, no need to allocate all that memory. (14-Feb-2009 Martin Gühmann)
+// - Amiga builds: match facts, the army's answers the scheduler needs for
+//   every goal, kept for one match pass (Get_Match_Facts, Order_Is_Illegal).
 //
 //----------------------------------------------------------------------------
 
@@ -1016,3 +1018,180 @@ bool Agent::HasMovePoints() const
 	m_army->CurMinMovementPoints(movePoints);
 	return movePoints >= 1.0;
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_env_value
+#include "UnitData.h"
+#include "OrderRecord.h"
+
+uint32 Agent::s_matchPass    = 0;
+uint32 Agent::s_passCounter  = 0;
+sint32 Agent::s_matchCacheOn = -1;
+
+bool Agent::AI_Cache_On()
+{
+	if (s_matchCacheOn < 0)
+	{
+		char value[8];
+		s_matchCacheOn = !(amiga_env_value("CTP2_AICACHE", value, sizeof(value)) && value[0] == '0');
+		amiga_log("AI: caches %s (ENV:CTP2_AICACHE)\n", s_matchCacheOn ? "on" : "off");
+	}
+
+	return s_matchCacheOn != 0;
+}
+
+void Agent::Open_Match_Pass()
+{
+	robotastar2_AmigaStatsPass();   // ENV:CTP2_ASTATS (a measurement)
+
+	if (!AI_Cache_On())
+		return;
+
+	if (++s_passCounter == 0)
+		++s_passCounter;
+
+	s_matchPass = s_passCounter;
+}
+
+void Agent::Close_Match_Pass()
+{
+	s_matchPass = 0;
+}
+
+const Agent::MatchFacts & Agent::Get_Match_Facts() const
+{
+	Assert(s_matchPass != 0);
+	if (m_factsPass == s_matchPass)
+		return m_facts;
+
+	// The same calls, in the same form, as where these were read before
+	// (Goal::Compute_Agent_Matching_Value, Goal::Pretest_Bid,
+	// Agent::GetRoundsPrecise).
+	MatchFacts & f = m_facts;
+	MapPoint const curr_pos = Get_Pos();
+
+	f.hasCargo = m_army->HasCargo();
+	f.isAir    = m_army->GetMovementTypeAir() != 0;
+	f.num      = m_army->Num();
+	f.getCargo = m_army->GetCargo(f.transports, f.maxCargo, f.emptyCargo);
+	f.minFuel  = m_army->GetMinFuel();
+
+	f.movementType = m_army->GetMovementType();
+	if (m_army->HasCargo())
+		f.movementType |= m_army->GetCargoMovementType();
+
+	f.posOwner  = g_theWorld->GetOwner(curr_pos);
+	f.cellOwner = g_theWorld->GetCell(curr_pos)->GetOwner();
+
+	f.canSettle                = m_army->CanSettle();
+	f.canBeachAssault          = m_army->CanBeachAssault();
+	f.canSomeCargoBeachAssault = m_army->CanSomeCargoBeachAssault();
+	f.canNukeCity              = m_army->CanNukeCity();
+
+	f.woundedNotObsolete =
+	        m_army->HasCargo()
+	    &&  m_army->IsCargoWounded()
+	    && !m_army->IsCargoObsolete()
+	    || !m_army->HasCargo()
+	    &&  m_army->IsWounded()
+	    && !m_army->IsObsolete();
+
+	f.obsolete = m_army->HasCargo() ? m_army->IsCargoObsolete() : m_army->IsObsolete();
+
+	bool isspecial, isstealth, cancapture, haszoc, canbombard;
+	bool canthrowparty, canestablishembassy;
+	sint32 maxattack, maxdefense;
+	if (!m_army->HasCargo())
+	{
+		m_army->CharacterizeArmy(isspecial, isstealth, maxattack, maxdefense,
+		    cancapture, haszoc, canbombard, canthrowparty, canestablishembassy);
+	}
+	else
+	{
+		m_army->CharacterizeCargo(isspecial, isstealth, maxattack, maxdefense,
+		    cancapture, haszoc, canbombard, canthrowparty, canestablishembassy);
+	}
+	f.isSpecial = isspecial;
+	f.maxAttack = maxattack;
+	f.hasZoc    = haszoc;
+
+	m_army->MinMovementPoints(f.minMove);
+
+	// The tie breaker, statement for statement as in
+	// Goal::Compute_Agent_Matching_Value (there it divides only when it is
+	// reached; here a zero count leaves the sum).
+	const ArmyData * army = m_army.GetData();
+	Utility tieBreaker = 0;
+	if (m_army->HasCargo())
+	{
+		sint32 cargoNum = 0;
+		for (sint32 i = 0; i < army->Num(); ++i)
+		{
+			UnitDynamicArray const * cargo =
+				army->Get(i).AccessData()->GetCargoList();
+
+			if (cargo && cargo->Num() > 0)
+			{
+				cargoNum += cargo->Num();
+				for (sint32 j = 0; j < cargo->Num(); ++j)
+				{
+					const UnitRecord* rec = cargo->Get(j)->GetDBRec();
+					tieBreaker += static_cast<Utility>(rec->GetAttack());
+					tieBreaker += static_cast<Utility>(rec->GetDefense());
+					tieBreaker +=                      rec->GetZBRangeAttack();
+					tieBreaker +=                      rec->GetFirepower();
+					tieBreaker += static_cast<Utility>(rec->GetArmor());
+					tieBreaker +=                      army->Get(i)->CalculateTotalHP();
+				}
+			}
+		}
+
+		if (cargoNum > 0)
+			tieBreaker /= cargoNum;
+	}
+	else
+	{
+		for (sint32 i = 0; i < army->Num(); ++i)
+		{
+			const UnitRecord* rec = army->Get(i)->GetDBRec();
+			tieBreaker += static_cast<Utility>(rec->GetAttack());
+			tieBreaker += static_cast<Utility>(rec->GetDefense());
+			tieBreaker +=                      rec->GetZBRangeAttack();
+			tieBreaker +=                      rec->GetFirepower();
+			tieBreaker += static_cast<Utility>(rec->GetArmor());
+			tieBreaker +=                      army->Get(i)->CalculateTotalHP();
+		}
+
+		if (army->Num() > 0)
+			tieBreaker /= army->Num();
+	}
+	f.tieBreaker = tieBreaker;
+
+	m_factsPass = s_matchPass;
+	return m_facts;
+}
+
+bool Agent::Order_Is_Illegal(const OrderRecord * order_rec, sint32 goal_type) const
+{
+	if (s_matchPass == 0 || goal_type < 0)
+	{
+		return m_army->TestOrder(order_rec) == ORDER_TEST_ILLEGAL
+		    && m_army->CargoTestOrder(order_rec) == ORDER_TEST_ILLEGAL;
+	}
+
+	if (m_ordersPass != s_matchPass)
+	{
+		m_orderIllegal.assign(g_theGoalDB->NumRecords(), -1);
+		m_ordersPass = s_matchPass;
+	}
+
+	sint8 & known = m_orderIllegal[goal_type];
+	if (known < 0)
+	{
+		known = (m_army->TestOrder(order_rec) == ORDER_TEST_ILLEGAL
+		      && m_army->CargoTestOrder(order_rec) == ORDER_TEST_ILLEGAL) ? 1 : 0;
+	}
+
+	return known != 0;
+}
+#endif // CTP2_AMIGA_BUILD

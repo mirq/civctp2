@@ -44,6 +44,16 @@ OPT_FLAGS  ?= -O2 -fno-peephole2 -fbbb=- -fomit-frame-pointer
 
 AMIGA_DEFS += -DCTP2_AMIGA_060=1
 
+# -O3 for the files a late-game AI turn spends its time in (path searches,
+# map and unit lookups): 6-7 % less AI time on a 68060, the same game
+# (docs/performance.md). Paths as the objects', below $(CTP2).
+AMIGA_O3_FILES := \
+	robot/pathing/astar robot/pathing/unitastar robot/pathing/robotastar2 \
+	robot/pathing/AstarPnt robot/pathing/CityAstar \
+	gs/world/MapPoint gs/world/Cell gs/world/WrlEnv gs/world/WrlUnit \
+	gs/world/wldgen gs/world/WrldCont gs/gameobj/UnitData gs/gameobj/Vision
+$(foreach f,$(AMIGA_O3_FILES),$(eval AMIGA_FILE_FLAGS_$(f) += -O3))
+
 CFLAGS   := $(ARCH_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) $(AMIGA_INCS) $(AMIGA_C_FLAGS) $(EXTRA_CFLAGS)
 CXXFLAGS := $(ARCH_FLAGS) $(OPT_FLAGS) $(AMIGA_COMMON_FLAGS) $(AMIGA_DEFS) $(AMIGA_INCS) $(AMIGA_CXX_FLAGS) $(EXTRA_CXXFLAGS)
 
@@ -56,7 +66,7 @@ LIBS    := -lm
 
 # A changed flag rebuilds every object.
 BUILD_FLAGS_STAMP := $(OBJDIR)/.build-flags
-$(shell mkdir -p $(OBJDIR); f='$(CXXFLAGS) $(CFLAGS)'; [ "$$(cat $(BUILD_FLAGS_STAMP) 2>/dev/null)" = "$$f" ] || printf '%s' "$$f" > $(BUILD_FLAGS_STAMP))
+$(shell mkdir -p $(OBJDIR); f='$(CXXFLAGS) $(CFLAGS) O3: $(AMIGA_O3_FILES)'; [ "$$(cat $(BUILD_FLAGS_STAMP) 2>/dev/null)" = "$$f" ] || printf '%s' "$$f" > $(BUILD_FLAGS_STAMP))
 
 .PHONY: all objects clean launcher
 all: $(TARGET) launcher

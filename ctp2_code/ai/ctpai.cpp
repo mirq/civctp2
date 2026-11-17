@@ -81,6 +81,10 @@
 //   executed by the AI according to the game state for instance diplomacy. (08-Jan-2019 Martin Gühmann)
 // - Amiga builds: BeginTurn's visible-improvement flags computed once, not
 //   once per possible player (the loop reads the same player each time).
+// - Amiga builds: ProcessMatches opens a match pass from the garrison
+//   assignment to the end of the matching (Agent::Get_Match_Facts).
+// - Amiga builds: BeginTurn adds its goals in a batch, with an index of the
+//   existing ones (Scheduler::Begin_Goal_Batch).
 //
 //----------------------------------------------------------------------------
 
@@ -649,6 +653,12 @@ STDEHANDLER(CtpAi_ProcessMatchesEvent)
 
 	g_player[playerId]->CalcCargoCapacity();
 	scheduler.Process_Agent_Changes();
+#if defined(CTP2_AMIGA_BUILD)
+	// From here to the end of Match_Resources no army changes: the orders
+	// the goals give are events that run after this one. So the agents'
+	// facts hold for the whole pass (Agent::Get_Match_Facts).
+	Agent::Open_Match_Pass();
+#endif
 	scheduler.Assign_Garrison();
 	scheduler.Rollback_Emptied_Transporters();
 	scheduler.ResetTransport();
@@ -665,6 +675,9 @@ STDEHANDLER(CtpAi_ProcessMatchesEvent)
 	DPRINTF(k_DBG_AI, ("//                    Player %d\n", playerId));
 
 	scheduler.Match_Resources(player_ptr->IsRobot());
+#if defined(CTP2_AMIGA_BUILD)
+	Agent::Close_Match_Pass();
+#endif
 
 	DPRINTF(k_DBG_AI, ("//  elapsed time = %d ms\n", (GetTickCount() - t1)));
 
@@ -1365,6 +1378,12 @@ void CtpAi::BeginTurn(const PLAYER_INDEX player)
 	DPRINTF(k_DBG_AI, ("// ADD SETTLE, EXPLORE, AND MISC TARGETS -- Turn %d\n", round));
 	DPRINTF(k_DBG_AI, ("//                                          Player %d\n", player));
 
+#if defined(CTP2_AMIGA_BUILD)
+	// Every target is offered again each turn: look the existing goals up
+	// in an index, not by walking each goal type's list for every offer.
+	Scheduler::GetScheduler(player).Begin_Goal_Batch();
+#endif
+
 	AddSettleTargets (player);
 	AddExploreTargets(player);
 	AddMiscMapTargets(player);
@@ -1377,6 +1396,11 @@ void CtpAi::BeginTurn(const PLAYER_INDEX player)
 	DPRINTF(k_DBG_AI, ("//                                                   Player %d\n", player));
 
 	AddGoalsForCitiesAndArmies(player);
+
+#if defined(CTP2_AMIGA_BUILD)
+	Scheduler::GetScheduler(player).End_Goal_Batch();
+#endif
+
 	Scheduler::GetScheduler(player).Associate_Goals_With_Sub_Goals();
 	DPRINTF(k_DBG_AI, ("//  elapsed time = %d ms\n", (GetTickCount() - t1)));
 

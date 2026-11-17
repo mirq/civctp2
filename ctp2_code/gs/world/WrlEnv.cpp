@@ -118,6 +118,7 @@ sint32 World::IsCurrent(const sint32 x, const sint32 y)
 	}
 }
 
+#if !defined(CTP2_AMIGA_BUILD)   // Amiga builds: inline in World.h
 bool World::EnvIsLand(const uint32 env) const
 {
 	return ((env & k_MASK_ENV_MOVEMENT_TYPE) & k_BIT_MOVEMENT_TYPE_LAND) != 0;
@@ -127,6 +128,7 @@ bool World::IsLand(const MapPoint &pos) const
 {
 	return EnvIsLand(GetCell(pos)->m_env);
 }
+#endif
 
 bool World::IsLand(const sint32 x, const sint32 y) const
 {
@@ -381,20 +383,24 @@ bool World::IsHill(const MapPoint &pos) const
 	return EnvIsHill(GetCell(pos)->m_env);
 }
 
+#if !defined(CTP2_AMIGA_BUILD)   // Amiga builds: inline in World.h
 bool World::EnvIsMountain(const uint32 env) const
 {
 	return ((env & k_MASK_ENV_MOVEMENT_TYPE) & k_BIT_MOVEMENT_TYPE_MOUNTAIN) != 0;
 }
+#endif
 
 bool World::IsMountain(const sint32 x, const sint32 y) const
 {
 	return EnvIsMountain(m_map[x][y]->m_env);
 }
 
+#if !defined(CTP2_AMIGA_BUILD)
 bool World::IsMountain(const MapPoint &pos) const
 {
 	return EnvIsMountain(GetCell(pos)->m_env);
 }
+#endif
 
 void World::SetMovementType (const sint32 x, const sint32 y, const sint32 t)
 {
@@ -436,6 +442,7 @@ bool World::IsCanal(const MapPoint &pos) const
 	}
 }
 
+#if !defined(CTP2_AMIGA_BUILD)   // Amiga builds: inline in World.h
 bool World::EnvIsTunnel(const uint32 env) const
 {
 	return (env & k_MASK_ENV_CANAL_TUNNEL) != 0;
@@ -452,6 +459,7 @@ bool World::IsTunnel(const MapPoint &pos) const
 		return false;
 	}
 }
+#endif
 
 bool World::EnvIsRoad(const sint32 i, const uint32 env) const
 {

@@ -41,12 +41,18 @@
 // - Moved some Upgrade functionality from ArmyData. (Dec 24th 2006 Martin Gühmann)
 // - Added methods to retrieve the future terrain move costs of tile
 //   improvments under construction. (17-Jan-2008 Martin Gühmann)
+// - Amiga builds: a move cost version (MoveCostVersion), for MapAnalysis's
+//   kept empire centres.
 //
 //----------------------------------------------------------------------------
 
 #include "c3.h"
 
 #include "Cell.h"
+
+#if defined(CTP2_AMIGA_BUILD)
+uint32 Cell::s_moveCostVersion = 1;
+#endif
 #include "TerrainRecord.h"
 #include "TerrImprove.h"
 #include "TerrainImprovementRecord.h"
@@ -150,6 +156,9 @@ void Cell::Serialize(CivArchive &archive)
 		m_playerLandArea[m_cellOwner+1]--;
 		archive.LoadChunk((uint8 *)&m_env, ((uint8 *)&m_cellOwner)+sizeof(m_cellOwner));
 		m_playerLandArea[m_cellOwner+1]++;
+#if defined(CTP2_AMIGA_BUILD)
+		++s_moveCostVersion;    // m_move_cost is in the chunk
+#endif
 	}
 
 	uint8 flags;
@@ -1079,6 +1088,9 @@ void Cell::CalcTerrainMoveCost()
 	{
 		g_theWorld->SetCapitolDistanceDirtyFlags(0xffffffff);
 		m_move_cost = new_cost;
+#if defined(CTP2_AMIGA_BUILD)
+		++s_moveCostVersion;
+#endif
 	}
 	Assert(m_move_cost > 0);
 }

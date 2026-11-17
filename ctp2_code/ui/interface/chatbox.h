@@ -86,6 +86,11 @@ public:
 	void AddText(const MBCHAR *text);
 	void AddLine(sint32 playerNum, const MBCHAR *text);
 
+#if defined(__AUI_USE_AMIGA__)
+	// A chat command as if typed (ENV:CTP2_AUTORND runs "/rnd N" this way).
+	BOOL RunCommand(const MBCHAR *s) { return m_chatWindow ? m_chatWindow->CheckForEasterEggs(s) : FALSE; }
+#endif
+
 private:
 
 	ChatWindow			*m_chatWindow;

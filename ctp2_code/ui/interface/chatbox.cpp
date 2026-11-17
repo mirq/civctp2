@@ -31,6 +31,7 @@
 // - Seperated /debugcells on and off. (30-Dec-2018 Martin Gühmann)
 // - Added player option to /debugcells easter egg, to look only on the
 //   settle cells of one player instead of all players. (30-Dec-2018 Martin Gühmann)
+// - Amiga builds: /rnd logs each round's time ("Rnd:" lines in ctp2.log).
 //
 //----------------------------------------------------------------------------
 
@@ -320,6 +321,10 @@ BOOL ChatWindow::CheckForEasterEggs(const MBCHAR *s)
 			g_chatBox->AddLine(g_selected_item->GetCurPlayer(), buf);
 		}
 
+#if defined(__AUI_USE_AMIGA__)
+		uint32_t const rndStart = amiga_ticks_ms();
+#endif
+
 		for (sint32 i = 0; i < n && !gDone; i++)
 		{
 			DPRINTF(k_DBG_SCHEDULER_DETAIL, ("PLAYER_SYNC: /rnd iteration %d/%d before StartNextPlayer, curPlayer=%d, visPlayer=%d\n",
@@ -365,7 +370,11 @@ BOOL ChatWindow::CheckForEasterEggs(const MBCHAR *s)
 				{
 					if (event.type == AMIGA_EV_QUIT)
 					{
+						// After CTRL-C every poll answers QUIT again: stop
+						// here, or this loop never ends.
 						gDone = TRUE;
+						i = n;
+						break;
 					}
 
 					if (event.type == AMIGA_EV_KEY && event.down && event.code == 0x45)
@@ -423,6 +432,22 @@ BOOL ChatWindow::CheckForEasterEggs(const MBCHAR *s)
 			          )
 			      && !gDone
 			     );
+
+#if defined(__AUI_USE_AMIGA__)
+			// One line per round, for timing the AI on a saved game.
+			{
+				static uint32_t s_rndLast = 0;
+				uint32_t const now = amiga_ticks_ms();
+				if (i == 0)
+					s_rndLast = rndStart;
+				sint32 const visible = g_selected_item ? g_selected_item->GetVisiblePlayer() : -1;
+				amiga_log("Rnd: %d of %d done%s, round %d, %u ms (total %u ms)\n",
+				          (i < n) ? i + 1 : n, n, (i < n) ? "" : " (stopped)",
+				          (visible >= 0 && g_player[visible]) ? g_player[visible]->GetCurRound() : -1,
+				          (unsigned) (now - s_rndLast), (unsigned) (now - rndStart));
+				s_rndLast = now;
+			}
+#endif
 		}
 
 		return TRUE;

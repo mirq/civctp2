@@ -96,6 +96,28 @@ tens of pixels now and then from the card check and a few thousand after
 each scroll, all on sprites; anything on the terrain, or large numbers, is a
 fault in the display path. The pictures `RAM:ctp2check<n>.ppm` show where.
 
+## AI timing on a saved game
+
+`ctp2.060 nointromovie -lsave/games/<folder>/<save>` loads the save at
+start, without the menu. With `setenv CTP2_AUTORND 5` the game then plays
+5 rounds by itself (`/rnd 5`: every player's turn, the human's ended at
+once), logs a `Rnd:` line per round and `AutoRnd: done in N ms`,
+quick-saves to `save/games/<leader>/QUICKSAVE-<leader>` and quits. With
+`CTP2_PROF 1` the rounds alone are sampled into `RAM:ctp2prof.bin`.
+
+The game is deterministic from a save, so two builds (or one build with
+`CTP2_AICACHE 0` and `1`) must leave the same quick-save. Compare them with
+`build/aiopt/cmpsave.py A B` on the host: it compares the bytes, then the
+inflated game data. In the turn-101 test game one byte (inflated offset
+240040, in a city record) is not initialised and differs from run to run;
+everything else must match.
+
+Test games (the seeded quick start, `CTP2_SEED 4242`, 6 players, map size
+1, played by the AI; player 1 detached again before saving):
+
+- `save/games/Julius/Julius-Roma-1600BC`: turn 101 (1580 BC; the name is
+  the dialog's default). Copy: `build/aiopt/saves/T101-Julius-Roma-1580BC.sav`.
+
 ## AI regression
 
 The same procedure as on other platforms (CONTRIBUTING.md): start a game,

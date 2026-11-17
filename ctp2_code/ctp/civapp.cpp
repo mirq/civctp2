@@ -1482,6 +1482,9 @@ void CivApp::CleanupAppUI(void)
 
 void CivApp::CleanupAppDB(void)
 {
+#if defined(CTP2_AMIGA_BUILD)
+    terrainutil_AmigaForgetTables();    // built from the databases going now
+#endif
     allocated::clear(g_theMapDB);
     allocated::clear(g_exclusions);
     allocated::clear(g_theMessageIconFileDB);
@@ -2441,6 +2444,17 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 					}
 					g_c3ui->AmigaDrawScreen();
 					AMIGA_PERF_END(perfLoop, AMIGA_PERF_SCROLL_LOOP);
+
+					// The game's events wait for this loop's end, and with the
+					// pointer resting on the screen's edge it has none (the
+					// map wraps east-west): the end of a turn and the AI's
+					// turns stood still. A slice, then the events get theirs;
+					// the next frame scrolls on.
+					if (g_gevManager && g_gevManager->EventsPending()
+					 && Os::GetTicks() - start_time_ms >= 250)
+					{
+						break;
+					}
 #endif
 				} while (ui_CheckForScroll());
 

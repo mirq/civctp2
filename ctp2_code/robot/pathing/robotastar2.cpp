@@ -28,11 +28,22 @@
 //   unload its cargo, because the cargo has not enough move points.
 // - A transporter's path does not not leave the target continent, once it
 //   is on the target continent. (13-Jul-2009 Martin Gühmann)
+// - Amiga builds: the danger test of a cell, whether it is next to a foreign
+//   army and whether the cargo can unload there are worked out once per
+//   search (CheckIsDangerForPosKept, IsNextToForeignerKept,
+//   CargoCanUnloadAtKept).
 //
 //----------------------------------------------------------------------------
 
 #include "c3.h"
 #include "robotastar2.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include <algorithm>
+#include <set>
+#include <vector>
+#include "agent.h"          // Agent::AI_Cache_On
+#include "amiga_platform.h" // amiga_env_flag, amiga_ticks_us, amiga_log
+#endif
 
 #include "Path.h"
 #include "World.h"          // g_theWorld
@@ -73,7 +84,11 @@ bool RobotAstar2::TransportPathCallback (const bool & can_enter,
 		bool is_land    = ( g_theWorld->IsLand(pos) || g_theWorld->IsMountain(pos) );
 		bool wrong_cont = ( cont != m_transDestCont ) && (!g_theWorld->IsCity(pos));
 
+#if defined(CTP2_AMIGA_BUILD)
+		bool occupied = (m_army->HasCargo() && (!CargoCanUnloadAtKept(pos)));
+#else
 		bool occupied = (m_army->HasCargo() && (!m_army.CanAtLeastOneCargoUnloadAt(pos, false, !m_is_robot)));
+#endif
 
 		// World::IsTunnel(pos) requires IsWater(pos) first, so a tunnel
 		// tile also satisfies IsWater/IsShallowWater below - without this,
@@ -215,14 +230,22 @@ bool RobotAstar2::TransportPathCallback (const bool & can_enter,
 				    && (
 				          ( g_theWorld->IsOccupiedByForeigner  (pos, m_owner) // If the target is a city
 				        && !g_theWorld->IsSurroundedByWater    (pos))
+#if defined(CTP2_AMIGA_BUILD)
+				        ||  IsNextToForeignerKept(pos)
+#else
 				        ||  g_theWorld->IsNextToForeigner(pos, m_owner)
+#endif
 				       )
 				  )
 				{
 					cost += k_MOVE_ISDANGER_COST;
 				}
 				// If we do not land, just avoid some units next, for instance bombardment units
+#if defined(CTP2_AMIGA_BUILD)
+				else if(IsNextToForeignerKept(pos))
+#else
 				else if(g_theWorld->IsNextToForeigner(pos, m_owner))
+#endif
 				{
 					cost += k_MOVE_ISDANGER_COST;
 				}
@@ -284,7 +307,11 @@ bool RobotAstar2::AirliftPathCallback (const bool & can_enter,
 		// flight, where genuine alternate routes exist. Mirrors
 		// TransportPathCallback's "if we do not land, just avoid some units
 		// next" branch, which does the same for a ship still at sea.
+#if defined(CTP2_AMIGA_BUILD)
+		if(pos != m_dest && IsNextToForeignerKept(pos))
+#else
 		if(pos != m_dest && g_theWorld->IsNextToForeigner(pos, m_owner))
+#endif
 		{
 			cost += k_MOVE_ISDANGER_COST;
 		}
@@ -341,11 +368,41 @@ bool RobotAstar2::FindPath( const PathType & pathType,
                             float & total_cost,
                             sint32 additionalUnits)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// A new search: nothing kept from the last one (CheckIsDangerForPosKept).
+	if (++m_dangerGen == 0)
+	{
+		for (int f = 0; f < KEPT_FACTS; ++f)
+			std::fill(m_keptStamp[f].begin(), m_keptStamp[f].end(), 0);
+		m_dangerGen = 1;
+	}
+	m_dangerArmy  = army.m_id;
+	m_dangerOwner = -1;   // set by KeptIndex once the search is set up
+	m_dangerStart = start;
+	m_dangerDest  = dest;
+#endif
+
 	sint32 cutoff = Astar_MaxSearchNodes();
 
 	sint32 nodes_opened = 0;
 	bool is_broken_path = false;
 	Path bad_path;
+
+#if defined(CTP2_AMIGA_BUILD)
+	// ENV:CTP2_ASTATS: counts for robotastar2_AmigaStats (a measurement).
+	struct AstarStat
+	{
+		sint32 const * nodes;
+		uint64_t       t0;
+		bool           on;
+		~AstarStat() { if (on) robotastar2_AmigaCount(*nodes, (uint32)(amiga_ticks_us() - t0)); }
+	} stat = { &nodes_opened, 0, robotastar2_AmigaStatsOn() };
+	if (stat.on)
+	{
+		stat.t0 = amiga_ticks_us();
+		robotastar2_AmigaRequest(pathType, army.m_id, army_move_type, start, dest, check_dest);
+	}
+#endif
 
 	m_pathType = pathType;
 	m_transDestCont = g_theWorld->GetContinent(dest);
@@ -451,7 +508,11 @@ bool RobotAstar2::EntryCost( const MapPoint &prev,
 
 		if(m_is_robot && pos != m_army->RetPos() && pos != m_dest && cost < k_ASTAR_BIG)
 		{
+#if defined(CTP2_AMIGA_BUILD)
+			if(CheckIsDangerForPosKept(pos))
+#else
 			if(CheckIsDangerForPos(pos))
+#endif
 			{
 				cost      += k_MOVE_ISDANGER_COST;
 			}
@@ -472,6 +533,153 @@ bool RobotAstar2::EntryCost( const MapPoint &prev,
 
 	return r;
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+// ENV:CTP2_ASTATS: what the AI's path searches cost, and how many asked the
+// same as one before in the same match pass (a measurement only).
+namespace
+{
+	sint32   s_astatsOn = -1;
+	uint32   s_astatCalls, s_astatRepeats, s_astatBig, s_astatPasses;
+	uint64_t s_astatNodes, s_astatUs;
+	std::set<std::vector<sint32> > s_astatSeen;
+}
+
+bool robotastar2_AmigaStatsOn(void)
+{
+	if (s_astatsOn < 0) s_astatsOn = amiga_env_flag("CTP2_ASTATS") ? 1 : 0;
+	return s_astatsOn != 0;
+}
+
+void robotastar2_AmigaRequest(sint32 type, uint32 army, uint32 moveType,
+                              const MapPoint & start, const MapPoint & dest, bool checkDest)
+{
+	std::vector<sint32> key(8);
+	key[0] = type; key[1] = (sint32)army; key[2] = (sint32)moveType;
+	key[3] = start.x; key[4] = start.y; key[5] = dest.x; key[6] = dest.y; key[7] = checkDest;
+	if (!s_astatSeen.insert(key).second) ++s_astatRepeats;
+}
+
+void robotastar2_AmigaCount(sint32 nodes, uint32 us)
+{
+	++s_astatCalls;
+	s_astatNodes += (nodes > 0) ? nodes : 0;
+	s_astatUs    += us;
+	if (nodes >= Astar_MaxSearchNodes() / 2) ++s_astatBig;
+}
+
+void robotastar2_AmigaStatsPass(void)
+{
+	if (!robotastar2_AmigaStatsOn()) return;
+	++s_astatPasses;
+	s_astatSeen.clear();
+}
+
+void robotastar2_AmigaStatsLog(void)
+{
+	if (!robotastar2_AmigaStatsOn()) return;
+	amiga_log("AStats: %lu searches in %lu passes, %lu ms, %lu nodes opened, %lu over half the cutoff, %lu repeats in a pass\n",
+	          (unsigned long)s_astatCalls, (unsigned long)s_astatPasses, (unsigned long)(s_astatUs / 1000),
+	          (unsigned long)s_astatNodes, (unsigned long)s_astatBig, (unsigned long)s_astatRepeats);
+}
+
+//----------------------------------------------------------------------------
+//
+// Name       : RobotAstar2::CheckIsDangerForPosKept
+//
+// Description: CheckIsDangerForPos, worked out once per cell and search.
+//
+// Remark(s)  : What CheckIsDangerForPos reads that could differ within a
+//              FindPath (the army, where it is, the goal) is compared each
+//              time; a difference starts a new set. ENV:CTP2_AICACHE=0:
+//              asked every time, as before.
+//
+//----------------------------------------------------------------------------
+sint32 RobotAstar2::KeptIndex(const MapPoint & pos)
+{
+	if (!Agent::AI_Cache_On())
+		return -1;
+
+	sint32 const width = g_theWorld->GetXWidth();
+	sint32 const cells = width * g_theWorld->GetYHeight();
+	if (pos.x < 0 || pos.y < 0 || pos.x >= width || pos.y * width + pos.x >= cells)
+		return -1;
+
+	if (m_keptStamp[0].size() != static_cast<size_t>(cells))
+	{
+		for (int f = 0; f < KEPT_FACTS; ++f)
+		{
+			m_keptStamp[f].assign(cells, 0);
+			m_keptValue[f].assign(cells, 0);
+		}
+		m_dangerGen = 1;
+	}
+
+	MapPoint const start = m_army->RetPos();
+	if (   m_army.m_id != m_dangerArmy || start != m_dangerStart || m_dest != m_dangerDest
+	    || m_owner != m_dangerOwner || m_is_robot != m_dangerRobot)
+	{
+		if (++m_dangerGen == 0)
+		{
+			for (int f = 0; f < KEPT_FACTS; ++f)
+				std::fill(m_keptStamp[f].begin(), m_keptStamp[f].end(), 0);
+			m_dangerGen = 1;
+		}
+		m_dangerArmy  = m_army.m_id;
+		m_dangerStart = start;
+		m_dangerDest  = m_dest;
+		m_dangerOwner = m_owner;
+		m_dangerRobot = m_is_robot;
+	}
+
+	return pos.y * width + pos.x;
+}
+
+bool RobotAstar2::CheckIsDangerForPosKept(const MapPoint & pos)
+{
+	sint32 const index = KeptIndex(pos);
+	if (index < 0)
+		return CheckIsDangerForPos(pos);
+
+	if (m_keptStamp[KEPT_DANGER][index] != m_dangerGen)
+	{
+		m_keptValue[KEPT_DANGER][index] = CheckIsDangerForPos(pos) ? 1 : 0;
+		m_keptStamp[KEPT_DANGER][index] = m_dangerGen;
+	}
+
+	return m_keptValue[KEPT_DANGER][index] != 0;
+}
+
+bool RobotAstar2::IsNextToForeignerKept(const MapPoint & pos)
+{
+	sint32 const index = KeptIndex(pos);
+	if (index < 0)
+		return g_theWorld->IsNextToForeigner(pos, m_owner);
+
+	if (m_keptStamp[KEPT_FOREIGN][index] != m_dangerGen)
+	{
+		m_keptValue[KEPT_FOREIGN][index] = g_theWorld->IsNextToForeigner(pos, m_owner) ? 1 : 0;
+		m_keptStamp[KEPT_FOREIGN][index] = m_dangerGen;
+	}
+
+	return m_keptValue[KEPT_FOREIGN][index] != 0;
+}
+
+bool RobotAstar2::CargoCanUnloadAtKept(const MapPoint & pos)
+{
+	sint32 const index = KeptIndex(pos);
+	if (index < 0)
+		return m_army.CanAtLeastOneCargoUnloadAt(pos, false, !m_is_robot);
+
+	if (m_keptStamp[KEPT_UNLOAD][index] != m_dangerGen)
+	{
+		m_keptValue[KEPT_UNLOAD][index] = m_army.CanAtLeastOneCargoUnloadAt(pos, false, !m_is_robot) ? 1 : 0;
+		m_keptStamp[KEPT_UNLOAD][index] = m_dangerGen;
+	}
+
+	return m_keptValue[KEPT_UNLOAD][index] != 0;
+}
+#endif
 
 void RobotAstar2::RecalcEntryCost(AstarPoint *parent,
     AstarPoint *node, float &new_entry_cost,

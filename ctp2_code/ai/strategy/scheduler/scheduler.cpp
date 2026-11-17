@@ -54,6 +54,8 @@
 //   before deleted. (31-Dec-2018 Martin Gühmann)
 // - New goals are only added if the AI can achieve them. (08-Jan-2018 Martin Gühmann)
 // - Amiga builds: the cursor moves on while goals are prioritized.
+// - Amiga builds: Process_Goal_Changes opens a match pass, in which each
+//   agent's army is asked once, not once per goal (Agent::Get_Match_Facts).
 //
 //----------------------------------------------------------------------------
 
@@ -481,6 +483,12 @@ void Scheduler::Process_Goal_Changes()
 	SetIsAllyRegardCache(m_playerId);
 	AI_DPRINTF(k_DBG_SCHEDULER, m_playerId, -1, -1, ("//  Process goal changes:     Elapsed time = %d ms\n", (GetTickCount() - t1)));
 
+#if defined(CTP2_AMIGA_BUILD)
+	// No army changes from here to the end: what the matching values read
+	// from the agents' armies holds for the whole pass (Agent::Get_Match_Facts).
+	Agent::Open_Match_Pass();
+#endif
+
 	Raw_Prioritize_Goals(); // Computes raw priorities
 	Assign_Garrison();      // For the new garrison asignment, we need the rew priorities
 	Prioritize_Goals();     // Computes combined priorities
@@ -498,6 +506,10 @@ void Scheduler::Process_Goal_Changes()
 
 	Prune_Goals();
 	AI_DPRINTF(k_DBG_SCHEDULER, m_playerId, -1, -1, ("//  Prune goals:              Elapsed time = %d ms\n", (GetTickCount() - t1)));
+
+#if defined(CTP2_AMIGA_BUILD)
+	Agent::Close_Match_Pass();
+#endif
 
 	m_neededAgentStrength       = Squad_Strength(0);
 }
@@ -986,6 +998,42 @@ void Scheduler::Match_Resources(const bool move_armies)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 void Scheduler::Add_New_Goal(const Goal & new_goal)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	if(m_goalBatch)
+	{
+		// Most goals offered are there already: looked up first, the
+		// completeness test (validity, immunity, diplomacy) only for a new
+		// one. Either way a goal that is complete or there is not added.
+		sint32 const goal_type = new_goal.Get_Goal_Type();
+		Sorted_Goal_List & goals = m_goals_of_type[goal_type];
+
+		if(m_goalIndexType != goal_type || m_goalIndexSize != goals.size())
+		{
+			m_goalIndex.clear();
+			for
+			(
+			    Sorted_Goal_Iter goal_iter  = goals.begin();
+			                     goal_iter != goals.end();
+			                   ++goal_iter
+			)
+			{
+				m_goalIndex.insert(Goal_Key(*goal_iter->second));
+			}
+			m_goalIndexType = goal_type;
+		}
+
+		GoalKey const key = Goal_Key(new_goal);
+		if(m_goalIndex.find(key) == m_goalIndex.end() && !new_goal.IsComplete())
+		{
+			m_goalIndex.insert(key);
+			goals.push_back(Sorted_Goal_ptr(Goal::BAD_UTILITY, new Goal(new_goal)));
+		}
+
+		m_goalIndexSize = goals.size();
+		return;
+	}
+#endif
+
 	if(new_goal.IsComplete())
 	{
 		return;
@@ -1009,6 +1057,34 @@ void Scheduler::Add_New_Goal(const Goal & new_goal)
 	m_goals_of_type[goal_type].
 		push_back(Sorted_Goal_ptr(Goal::BAD_UTILITY, new Goal(new_goal)));
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+Scheduler::GoalKey Scheduler::Goal_Key(const Goal & goal)
+{
+	GoalKey key;
+	key.type   = goal.Get_Goal_Type();
+	key.player = goal.Key_Player();
+	key.army   = goal.Key_Army();
+	key.city   = goal.Key_City();
+	key.x      = goal.Key_Pos().x;
+	key.y      = goal.Key_Pos().y;
+	return key;
+}
+
+void Scheduler::Begin_Goal_Batch()
+{
+	m_goalBatch     = Agent::AI_Cache_On();
+	m_goalIndexType = -1;
+	m_goalIndex.clear();
+}
+
+void Scheduler::End_Goal_Batch()
+{
+	m_goalBatch     = false;
+	m_goalIndexType = -1;
+	m_goalIndex.clear();
+}
+#endif
 
 void Scheduler::Associate_Goals_With_Sub_Goals()
 {

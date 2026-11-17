@@ -33,6 +33,8 @@
 //   player power grids to the mapanalysis. (30-Apr-2008 Martin Gühmann)
 // - Fixed AI city rank calculation. (9-Nov-2009 Martin Gühmann)
 // - Separated the value map from the city value map. (11-Nov-2019 Martin Gühmann)
+// - Amiga builds: the empire centres are kept while the cities and the move
+//   costs stay the same (CalcEmpireCenter, EmpireCenterMemo).
 //
 //----------------------------------------------------------------------------
 
@@ -58,6 +60,9 @@
 #include "Diplomat.h"
 
 #include "Scheduler.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include "agent.h"              // Agent::AI_Cache_On
+#endif
 #include <vector>
 #include <limits>
 
@@ -128,6 +133,16 @@ void MapAnalysis::Resize
 	ResizeContinents();
 
 	m_movementTypeUnion      .resize(maxPlayerId);
+
+#if defined(CTP2_AMIGA_BUILD)
+	// A new or loaded game: nothing kept from before.
+	m_empireCenterMemo.clear();
+	m_empireCenterMemo.resize(maxPlayerId);
+	for (size_t i = 0; i < m_empireCenterMemo.size(); ++i)
+	{
+		m_empireCenterMemo[i].valid = false;
+	}
+#endif
 }
 
 void MapAnalysis::ResizeContinents()
@@ -610,6 +625,40 @@ double MapAnalysis::GetPowerRank(const CityData * city) const
 
 void MapAnalysis::CalcEmpireCenter(const size_t playerId)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// The same cities (positions in list order) and move costs: the same
+	// paths and so the same centre as last time (see EmpireCenterMemo).
+	Player * player_ptr = g_player[playerId];
+	sint32 const num_cities = player_ptr->m_all_cities->Num();
+	if (num_cities >= 2 && Agent::AI_Cache_On() && playerId < m_empireCenterMemo.size())
+	{
+		EmpireCenterMemo & memo = m_empireCenterMemo[playerId];
+		uint32 const version = Cell::MoveCostVersion();
+
+		bool same = memo.valid
+		         && memo.moveCostVersion == version
+		         && memo.cities.size() == static_cast<size_t>(num_cities);
+		for (sint32 i = 0; same && i < num_cities; ++i)
+		{
+			same = (memo.cities[i] == player_ptr->m_all_cities->Get(i)->GetPos());
+		}
+
+		if (!same)
+		{
+			memo.center = player_ptr->CalcEmpireCenter();
+			memo.cities.resize(num_cities);
+			for (sint32 i = 0; i < num_cities; ++i)
+			{
+				memo.cities[i] = player_ptr->m_all_cities->Get(i)->GetPos();
+			}
+			memo.moveCostVersion = version;
+			memo.valid           = true;
+		}
+
+		m_empireCenter[playerId] = memo.center;
+	}
+	else
+#endif
 	// For now disabled // why? //
 	m_empireCenter[playerId] = g_player[playerId]->CalcEmpireCenter();
 
@@ -1154,6 +1203,9 @@ void MapAnalysis::Cleanup()
 	DoubleVector().swap(m_goldHandicapRatio);
 	DoubleVector().swap(m_scienceHandicapRatio);
 	Uint32Vector().swap(m_movementTypeUnion);
+#if defined(CTP2_AMIGA_BUILD)
+	std::vector<EmpireCenterMemo>().swap(m_empireCenterMemo);
+#endif
 	m_cityOnContinent.Cleanup();
 	m_armyOnContinent.Cleanup();
 }

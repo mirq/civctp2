@@ -28,7 +28,7 @@
 // - Corrected wrap computation for city influence and borders.
 // - Fixed first RadiusIterator constructor so that it does the same as
 //   in the original version. The defect caused a significant AI
-//   performance loss. July 16th 2005 Martin Gühmann
+//   performance loss. July 16th 2005 Martin Gï¿½hmann
 // - Amiga builds: GetNeighborPosition and NormalizedSubtract computed
 //   directly (the same steps, wraps and checks without OrthogonalPoint).
 //
@@ -139,6 +139,7 @@ void MapPoint::Serialize(CivArchive &archive)
 		}
 }
 
+#if !defined(CTP2_AMIGA_BUILD)   // Amiga builds: inline in MapPoint.h
 bool MapPoint::operator == (const MapPoint &test_me) const
 {
 	return ((x == test_me.x) && (y == test_me.y));
@@ -148,6 +149,7 @@ bool MapPoint::operator!= (const MapPoint &test_me) const
 {
 	return ((x != test_me.x) || (y != test_me.y));
 }
+#endif
 
 WORLD_DIRECTION MapPoint::GetOppsositeDirection(WORLD_DIRECTION const & direction)
 {

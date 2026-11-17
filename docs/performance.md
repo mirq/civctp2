@@ -64,6 +64,13 @@ less than about a quarter of the compared pixels changed. See
 | `GetNeighborPosition` in row/column terms on worlds that do not wrap north-south | 29% of founding a city (flood fills, distances), 12% of path searches |
 | End Turn marks the control panel for redraw instead of drawing it at once (`Player.cpp`) | the panel was drawn twice, ~0.1 s |
 | `CtpAi::BeginTurn`'s city flags computed once, not 31 times (`ctpai.cpp`) | the loop reads `g_player[player]` for every i (an upstream bug, kept: same flags) |
+| AI match facts (`Agent::Get_Match_Facts`, `Goal::Compute_Agent_Matching_Value_Cached`): what a goal's score reads from an agent's army (cargo, wounded/obsolete, characterisation, tie breaker, `TestOrder` per goal type) worked out once per match pass; a pass is `Process_Goal_Changes` or one `ProcessMatches` (no army changes inside: orders are events that run afterwards) | turn-101 game, 5 rounds: 75.1 → 67.8 s with the goal index below |
+| goal index in `Scheduler::Add_New_Goal` during `CtpAi::BeginTurn` (every city, army and explore point is offered again each turn; the list was walked per offer); a duplicate is looked up before the completeness test | quadratic in goals; part of the line above |
+| empire centres kept (`MapAnalysis::CalcEmpireCenter`): a path search per city, for every player at every player's turn; kept while the cities and `Cell::MoveCostVersion` are the same | `AiBeginMapAnalysis` was ~370 ms, 80 % of it these searches; 5 rounds 72.1 → 58.5 s |
+| danger test kept per cell and search (`RobotAstar2::CheckIsDangerForPosKept`): asked for every way into a cell, eight neighbours each time | 5 rounds → 57.2 s |
+| `terrainutil_GetTerrainEffect` from a table built from the databases; the slave-order wonder test only for slave orders | road paths and tile improvement choices (`AiBeginTurn`) |
+| `-O3` for the pathing, map, unit-data and vision files (`AMIGA_O3_FILES` in `Makefile.amiga68k`) | turn 191, 1 round: 184.6 → 172.8 s; turn 101, 5 rounds: 102.6 → 95.5 s (all 6 players AI); quick-saves identical |
+| transport/airlift costs kept per cell and search (`RobotAstar2::IsNextToForeignerKept`, `CargoCanUnloadAtKept`): eight neighbours and every cargo unit, for every way into a cell; `MapPoint ==/!=`, `World::IsLand/IsMountain/IsTunnel` inline | turn 191: 172.8 → 149.6 s (path searches 115 → 74 s); turn 101: 95.5 → 94.3 s |
 
 ## Current figures (A4000, 2026-11-13)
 
@@ -88,6 +95,23 @@ less than about a quarter of the compared pixels changed. See
   (1.1 s if prebuilt). `CTP2_UIPRELOAD=start` builds the 10 main windows in
   18.8 s at load (city window 4.9 s, domestic 3.6 s, national 2.9 s, build
   manager 2.0 s).
+
+Late game (turn-191 save, all 6 players AI, 1 round, frame-pointer profile):
+path searches 65 % (`RobotAstar2::RecalcEntryCost` 52 s of it before the
+transport caches: `IsNextToForeigner` 19 s, cargo unload tests 18 s), the
+AI's goal logic itself 4 %, map redraw at the end of the round 12 %. No
+68060-trapping instruction in the game's code; FPU instructions ~2 % of
+the samples, math library calls 0.03 %. Round time: 251 s (original) →
+190 s (caches) → 173 s (`-O3`) → 150 s (transport caches, inlining).
+
+AI turns on a saved game (Amiberry, 2026-11-17, turn-101 test game, 6 AI
+players, `CTP2_AUTORND 5`, see [testing.md](testing.md)): 75.1 s for 5
+rounds with `CTP2_AICACHE 0`, 57.2 s with the caches (−24 %); the
+quick-saves are the same game. Where a round went before the empire-centre
+and danger caches (profile, 3 rounds): `ProcessMatches` 24 % (mostly unit
+path searches), `AiBeginMapAnalysis` 17 % (80 % empire centres),
+`BeginScheduler` 13 %, `AiBeginTurn` 11 % (tile improvements, road paths),
+`EndTurn` 6 % (radar map redraw), UI between events 16 %.
 
 Emulator (Amiberry, `Best_warpos_a4000` ≈ 68060 @ 50 MHz without JIT): idle
 28 fps, window drag ~27 fps, edge scroll ~7.5 steps/s. WarpOS build: menu

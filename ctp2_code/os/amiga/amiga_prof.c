@@ -40,7 +40,9 @@ volatile int amiga_prof_tag = -1;
 
 #define AMIGA_PROF_CALLERS 8
 #define AMIGA_PROF_ENTRY   (1 + AMIGA_PROF_CALLERS + 1)   /* PC, callers, tag */
-#define AMIGA_PROF_SAMPLES (128 * 1024)
+/* About 9 minutes at 1 ms (20 MB, only with ENV:CTP2_PROF): a late-game
+ * AI round takes minutes. */
+#define AMIGA_PROF_SAMPLES (512 * 1024)
 
 static struct Task *     s_main;
 static uintptr_t         s_codeStart, s_codeEnd;

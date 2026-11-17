@@ -97,6 +97,9 @@
 // - Slavey goals cannot be executed either if slavery has been abolished.(08-Jan-2019 Martin Gühmann)
 // - The AI does not incite revolutions in 1 city civs. (08-Jan-2019 Martin Gühmann)
 // - Execute_Task is now more explicit why a goal failed. (11-Jan-2019 Martin Gühmann)
+// - Amiga builds: while the scheduler has a match pass open, the matching
+//   value reads what depends only on the agent's army from the agent's
+//   facts for that pass (Compute_Agent_Matching_Value_Cached).
 //
 //----------------------------------------------------------------------------
 
@@ -1865,6 +1868,14 @@ Utility Goal::Compute_Agent_Matching_Value(const Agent_ptr agent_ptr) const
 		return Goal::BAD_UTILITY;
 	}
 
+#if defined(CTP2_AMIGA_BUILD) && !defined(_DEBUG) && !defined(USE_LOGGING)
+	// (The logging builds keep their goal reports: they take this one.)
+	if(Agent::Match_Pass_Open())
+	{
+		return Compute_Agent_Matching_Value_Cached(agent_ptr);
+	}
+#endif
+
 	MapPoint dest_pos = Get_Target_Pos();     // Get cheap target position first, no need for pillage checking, yet.
 	MapPoint curr_pos = agent_ptr->Get_Pos();
 
@@ -2330,6 +2341,400 @@ Utility Goal::Compute_Agent_Matching_Value(const Agent_ptr agent_ptr) const
 
 	return match;
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+//----------------------------------------------------------------------------
+//
+// Name       : Goal::Compute_Agent_Matching_Value_Cached
+//
+// Description: Compute_Agent_Matching_Value while the scheduler has a match
+//              pass open: the same tests in the same order, but what depends
+//              only on the agent's army comes from the agent's facts for the
+//              pass (worked out once, not once per goal). The travel time
+//              is computed exactly as there.
+//
+// Remark(s)  : Amiga builds. Keep in step with Compute_Agent_Matching_Value.
+//
+//----------------------------------------------------------------------------
+Utility Goal::Compute_Agent_Matching_Value_Cached(const Agent_ptr agent_ptr) const
+{
+	// Get_Is_Dead was tested by the caller.
+	const Agent::MatchFacts & facts = agent_ptr->Get_Match_Facts();
+	const GoalRecord * goal_rec = g_theGoalDB->Get(m_goal_type);
+
+	MapPoint dest_pos = Get_Target_Pos();     // Get cheap target position first, no need for pillage checking, yet.
+	MapPoint curr_pos = agent_ptr->Get_Pos();
+
+	Utility bonus = 0;
+
+	if(agent_ptr->IsNeededForGarrison())
+	{
+		if(dest_pos != curr_pos)
+		{
+			return Goal::BAD_UTILITY;
+		}
+		else
+		{
+			bonus = goal_rec->GetGarrisonBonus();
+		}
+	}
+
+	// This is expensive, because of pillage, get city target first.
+	dest_pos = Get_Target_Pos(agent_ptr->Get_Army());
+
+	// This is expensive, so remove first the garrison units.
+	if(!Pretest_Bid_Cached(agent_ptr, dest_pos))
+	{
+		return Goal::BAD_UTILITY;
+	}
+
+	if(
+	       goal_rec->GetNoTransport()
+	    &&
+	       (
+	           (
+	                !g_theWorld->IsOnSameContinent(dest_pos, curr_pos)
+	             && !facts.isAir
+	           )
+	        || facts.hasCargo // Actually we do not want to have any transporters involved
+	       )
+	  )
+	{
+		return Goal::BAD_UTILITY;
+	}
+
+	PLAYER_INDEX target_owner = Get_Target_Owner();
+	const Diplomat & diplomat = Diplomat::GetDiplomat(m_playerId);
+
+	if( target_owner > 0 &&
+		(!diplomat.IncursionPermission(target_owner)))
+	{
+		if (!facts.isSpecial || facts.maxAttack > 0 || facts.hasZoc)
+		{
+			return Goal::BAD_UTILITY;
+		}
+	}
+
+	if(Needs_Transporter()
+	&& facts.getCargo
+	&& facts.emptyCargo > 0
+	){
+		Utility transport_utility = 0;
+		Utility           utility = 0;
+
+		sint32            count   = 0;
+
+		for
+		(
+		    Plan_List::const_iterator match_iter  = m_matches.begin();
+		                              match_iter != m_matches.end();
+		                            ++match_iter
+		)
+		{
+			Agent_ptr agent_trans_ptr = match_iter->Get_Agent();
+
+			if
+			  (
+			      !agent_trans_ptr->Get_Is_Dead()
+			   &&  match_iter->Get_Needs_Transporter()
+			   &&  agent_trans_ptr->EstimateTransportUtility(agent_ptr, utility)
+			  )
+			{
+				transport_utility += utility;
+
+				++count;
+			}
+		}
+
+		if(count > 0)
+		{
+			Utility match = (transport_utility / count);
+			return match + Get_Raw_Priority();
+		}
+	}
+
+	if(facts.hasCargo && !CanReachTargetContinent(agent_ptr))
+	{
+		return Goal::BAD_UTILITY;
+	}
+
+	PLAYER_INDEX PosOwner = facts.posOwner;
+
+	if(goal_rec->GetTargetTypeCity()
+	&& goal_rec->GetTargetOwnerSelf()
+	){
+		if(goal_rec->GetNeedsRoom()
+		&& facts.num + g_theWorld->GetCell(dest_pos)->GetNumUnits() > k_MAX_ARMY_SIZE)
+		{
+			return Goal::BAD_UTILITY;
+		}
+
+		// For Defend or Retreat goals
+		if(facts.woundedNotObsolete)
+		{
+			bonus+= goal_rec->GetWoundedArmyBonus();
+		}
+		if(PosOwner != m_playerId
+		&&!diplomat.IncursionPermission(PosOwner)
+		){
+			bonus+= goal_rec->GetTreaspassingArmyBonus();
+		}
+	}
+	else if((goal_rec->GetTargetOwnerColdEnemy()
+	     ||  goal_rec->GetTargetOwnerHotEnemy())
+	     && (goal_rec->GetTargetTypeAttackUnit()
+	     ||  goal_rec->GetTargetTypeCity())
+	     )  //For Attack goals (unit or city)
+	{
+		if(facts.canSettle)
+		{
+			if
+			  (
+			       goal_rec->GetTargetTypeCity()
+			    && m_target_city.IsValid()
+			    && g_theWorld->GetCell(m_target_city->GetPos())->GetNumUnits() == 0
+			  )
+			{
+				// Opportunity action march into the city even if the army contains a settler
+			}
+			else
+			{
+				// If there is a settler in the army...
+				return Goal::BAD_UTILITY;
+			}
+		}
+
+		if( m_target_army.IsValid()
+		&& !agent_ptr->Get_Army()->CanFight(*m_target_army.AccessData())
+		&& !agent_ptr->Get_Army()->CanCargoFight(*m_target_army.AccessData()))
+		{
+			return Goal::BAD_UTILITY;
+		}
+
+		if(facts.woundedNotObsolete)
+		{
+			bonus+= goal_rec->GetWoundedArmyBonus();
+		}
+
+		if(PosOwner != m_playerId && !diplomat.IncursionPermission(PosOwner))
+		{
+			bonus += goal_rec->GetTreaspassingArmyBonus();
+		}
+	}
+	else if((goal_rec->GetTargetOwnerColdEnemy()
+	     ||  goal_rec->GetTargetOwnerHotEnemy())
+	     && (goal_rec->GetTargetTypeTradeRoute())
+	     )  // For trade routes
+	{
+		if(facts.canSettle) // CargoCanSettle
+		{
+			// If there is a settler in the army...
+			return Goal::BAD_UTILITY;
+		}
+	}
+
+	if(facts.obsolete)
+		bonus += goal_rec->GetObsoleteArmyBonus();
+
+	MapPoint point(-1, -1);
+	if(Needs_Transporter())
+	{
+		if(
+		       facts.getCargo
+		    && facts.emptyCargo > 0
+		  )
+		{
+			point = GetClosestCargoPos(agent_ptr);       // If is transporter
+		}
+		else
+		{
+			point = GetClosestTransporterPos(agent_ptr); // If needs to be transported
+		}
+	}
+	else
+	{
+		point = dest_pos;
+	}
+
+	point = (!point.IsValid()) ? dest_pos : point;
+
+	// As in Compute_Agent_Matching_Value, statement for statement (the
+	// 68060's extended precision: the same rounding needs the same code).
+	sint32 squared_distance = 0;
+	double eta = agent_ptr->GetRoundsPrecise(point, squared_distance);
+
+	double cell_dist = sqrt(static_cast<double>(squared_distance));
+
+	if(facts.hasCargo)
+	{
+		// If it is about the cargo, we need another turn to unload
+		eta += 1.0;
+	}
+
+	Utility raw_priority = Get_Raw_Priority();
+
+	const StrategyRecord & strategy =
+		Diplomat::GetDiplomat(m_playerId).GetCurrentStrategy();
+
+	sint32 distance_modifier = 1;
+	strategy.GetDistanceModifierFactor(distance_modifier);
+
+	Utility time_term = static_cast<Utility>( (eta * distance_modifier) + cell_dist);
+
+	if(goal_rec->GetTreaspassingArmyBonus() > 0)
+	{
+		PLAYER_INDEX pos_owner = facts.cellOwner;
+		bool incursion_permissin = Diplomat::GetDiplomat(m_playerId).IncursionPermission(pos_owner);
+		if (pos_owner >= 0 && !(incursion_permissin))
+		{
+			bonus += goal_rec->GetTreaspassingArmyBonus();
+		}
+	}
+
+	if(agent_ptr->Get_Army()->IsInVisionRangeAndCanEnter(dest_pos))
+	{
+		bonus += goal_rec->GetInVisionRangeBonus();
+
+		if (!Barbarians::InBarbarianPeriod()
+		||  wonderutil_GetProtectFromBarbarians(g_player[agent_ptr->Get_Army()->GetOwner()]->m_builtWonders)
+		){
+			bonus += goal_rec->GetNoBarbarianBonus();
+		}
+		else if ((agent_ptr->Get_Squad_Class() & k_Goal_SquadClass_CanAttack_Bit) != 0x0)
+		{
+			bonus += goal_rec->GetCanAttackBonus();
+		}
+	}
+
+	if(!facts.hasCargo)
+	{
+		if(!g_theWorld->IsOnSameContinent(dest_pos, curr_pos)) // Same continent problem
+		{
+			if((!facts.isAir
+			&&   g_player[m_playerId]->GetCargoCapacity() <= 0)
+			|| (!goal_rec->GetTargetOwnerSelf()
+			&&  !g_theWorld->HasAdjacentFreeLand(dest_pos, m_playerId)
+			&&   g_theWorld->GetCell(dest_pos)->GetNumUnits() > 0
+			&&  !facts.canBeachAssault)
+			){
+				return Goal::BAD_UTILITY;
+			}
+		}
+	}
+	else
+	{
+		if(!goal_rec->GetTargetOwnerSelf()
+		&& !g_theWorld->HasAdjacentFreeLand(dest_pos, m_playerId)
+		&&  g_theWorld->GetCell(dest_pos)->GetNumUnits() > 0
+		&& !facts.canSomeCargoBeachAssault)
+		{
+			return Goal::BAD_UTILITY;
+		}
+	}
+
+	Utility match = bonus + time_term + raw_priority;
+
+	match += facts.tieBreaker;
+
+	return match;
+}
+
+//----------------------------------------------------------------------------
+//
+// Name       : Goal::Pretest_Bid_Cached
+//
+// Description: Pretest_Bid with the agent's facts for the open match pass.
+//
+// Remark(s)  : Amiga builds. Keep in step with Pretest_Bid.
+//
+//----------------------------------------------------------------------------
+bool Goal::Pretest_Bid_Cached(const Agent_ptr agent_ptr, const MapPoint & target_pos) const
+{
+	const Agent::MatchFacts & facts = agent_ptr->Get_Match_Facts();
+	const Army & army = agent_ptr->Get_Army();
+
+	if (facts.minFuel != 0x7fffffff)
+	{
+		sint32 num_tiles_to_half;
+		sint32 num_tiles_to_empty;
+		army->CalcRemainingFuelTiles(num_tiles_to_half, num_tiles_to_empty);
+
+		sint32 distance_to_refuel;
+		sint32 distance_to_target;
+		MapPoint refuel_pos(-1, -1);
+		CtpAi::GetNearestRefuel(army, target_pos, refuel_pos, distance_to_refuel);
+
+		distance_to_target =
+		    static_cast<sint32>(sqrt(static_cast<double>
+		    (MapPoint::GetSquaredDistance(army->RetPos(), target_pos))
+		    ));
+
+		if (num_tiles_to_empty < distance_to_target + distance_to_refuel)
+			return false;
+	}
+
+	const GoalRecord *goal_rec = g_theGoalDB->Get(m_goal_type);
+
+	if (goal_rec->GetSquadClassCanBombard())
+	{
+		if(g_theWorld->GetCell(target_pos)->IsAnyUnitInCell())
+		{
+			CellUnitList* defenders = g_theWorld->GetCell(target_pos)->UnitArmy();
+			if(!army->CanBombardTargetType(*defenders))
+				return false;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	const OrderRecord *order_rec = goal_rec->GetExecute();
+
+	if (facts.transports > 0 )
+	{
+		if ((facts.emptyCargo < facts.maxCargo) || (facts.hasCargo))
+		{
+			ORDER_TEST cargo_test = army->CargoTestOrderHere(order_rec, target_pos);
+			if ( cargo_test == ORDER_TEST_ILLEGAL ||
+				 cargo_test == ORDER_TEST_INVALID_TARGET )
+				return false;
+			else
+				return true;
+		}
+		else if (Needs_Transporter())
+			return true;
+	}
+
+	bool needs_land_unit  = goal_rec->GetTargetTypeCity() && !m_target_city.CD()->IsCoastal();
+	     needs_land_unit &= goal_rec->GetTargetOwnerSelf();
+	     needs_land_unit |= goal_rec->GetTargetTypeGoodyHut();
+
+	uint32 movement_type  = facts.movementType;
+
+	bool land_movement = ((movement_type &
+	        (k_Unit_MovementType_Land_Bit | k_Unit_MovementType_Mountain_Bit)) != 0x0);
+	land_movement &= ((movement_type & k_Unit_MovementType_Air_Bit) == 0x0);
+
+	if (needs_land_unit && !land_movement)
+	{
+		return false;
+	}
+
+	if ( facts.canNukeCity &&
+		 (g_theWorld->GetCell(target_pos)->GetOwner() != m_playerId ||
+		  g_theWorld->GetCity(target_pos).m_id != 0x0) )
+		return false;
+
+	if (agent_ptr->Order_Is_Illegal(order_rec, m_goal_type))
+		return false;
+
+	if ( !army->CanEnter(target_pos) )
+		return false;
+
+	return true;
+}
+#endif // CTP2_AMIGA_BUILD
 
 Utility Goal::Get_Initial_Priority() const
 {
@@ -3382,6 +3787,15 @@ bool Goal::IsTargetImmune() const
 			return true;
 	}
 
+#if defined(CTP2_AMIGA_BUILD)
+	// Both ways below are only about the slave orders: for any other order
+	// the wonder test (it walks every wonder) is not needed.
+	if(order_record->GetUnitPretest_CanInciteUprising()
+	|| order_record->GetUnitPretest_CanUndergroundRailway()
+	|| order_record->GetUnitPretest_CanSlaveRaid()
+	|| order_record->GetUnitPretest_CanEnslaveSettler()
+	  )
+#endif
 	if(!wonderutil_GetProhibitSlavers(g_theWonderTracker->GetBuiltWonders()))
 	{
 		// Abolitionist has to go to cities with slaves

@@ -435,17 +435,41 @@ public:
 	bool IsShallowWater(const MapPoint &pos) const;
 	bool IsShallowWater(const sint32 x, const sint32 y) const;
 
+#if defined(CTP2_AMIGA_BUILD)
+	// Inline in Amiga builds (the path searches ask these all the time).
+	bool EnvIsLand(const uint32 env) const
+	{
+		return ((env & k_MASK_ENV_MOVEMENT_TYPE) & k_BIT_MOVEMENT_TYPE_LAND) != 0;
+	}
+	bool IsLand(const MapPoint &pos) const
+	{
+		return EnvIsLand(GetCell(pos)->m_env);
+	}
+#else
 	bool EnvIsLand(const uint32 env) const;
 	bool IsLand(const MapPoint &pos) const;
+#endif
 	bool IsLand(const sint32 i, const sint32 j) const;
 
 	bool EnvIsSpace(const uint32 env) const;
 	bool IsSpace(const MapPoint &pos) const;
 	bool IsSpace(const sint32 i, const sint32 j) const;
 
+#if defined(CTP2_AMIGA_BUILD)
+	bool EnvIsMountain(const uint32 env) const
+	{
+		return ((env & k_MASK_ENV_MOVEMENT_TYPE) & k_BIT_MOVEMENT_TYPE_MOUNTAIN) != 0;
+	}
+	bool IsMountain(const sint32 x, const sint32 y) const;
+	bool IsMountain(const MapPoint &pos) const
+	{
+		return EnvIsMountain(GetCell(pos)->m_env);
+	}
+#else
 	bool EnvIsMountain(const uint32 env) const;
 	bool IsMountain(const sint32 x, const sint32 y) const;
 	bool IsMountain(const MapPoint &pos) const;
+#endif
 
 	bool EnvIsHill(const uint32 env) const;
 	bool IsHill(const MapPoint &pos) const ;
@@ -472,8 +496,19 @@ public:
 	bool IsCity(const MapPoint &pos) const;
 
 	bool IsCanal(const MapPoint &pos) const;
+#if defined(CTP2_AMIGA_BUILD)
+	bool EnvIsTunnel(const uint32 env) const
+	{
+		return (env & k_MASK_ENV_CANAL_TUNNEL) != 0;
+	}
+	bool IsTunnel(const MapPoint &pos) const
+	{
+		return IsWater(pos) && EnvIsTunnel(GetCell(pos)->m_env);
+	}
+#else
 	bool EnvIsTunnel(const uint32 env) const;
 	bool IsTunnel(const MapPoint &pos) const;
+#endif
 	void SetCanalTunnel(MapPoint &pos, sint32 level);
 
 	bool EnvIsRoad(const sint32 i, const uint32 env) const;

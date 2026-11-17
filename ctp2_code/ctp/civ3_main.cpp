@@ -1023,6 +1023,97 @@ static void AmigaBenchTick(void)
 		break;
 	}
 }
+
+// ENV:CTP2_AUTORND=N: times the AI on a saved game. Start the game with
+// -l<save file>; once that game is up and it is the player's turn, it runs
+// "/rnd N" (N rounds, every player's turn ended by itself, the "Rnd:" lines
+// in ctp2.log), quick-saves (save/games/<leader>/QUICKSAVE-<leader>, to
+// compare two builds' games byte for byte) and quits. With ENV:CTP2_PROF the
+// samples of the rounds alone go to RAM:ctp2prof.bin. The player's own turns
+// are ended untouched, so a discovery's research choice stops the run; with
+// ENV:CTP2_AUTORND_AI the AI plays that empire for the rounds (for long runs).
+void gamefile_AmigaSaveFlush(void);   // gs/fileio/GameFile.cpp
+#include "chatbox.h"                  // ChatBox
+#include "GameEventManager.h"         // g_gevManager
+extern ChatBox * g_chatBox;           // ui/interface/chatbox.cpp
+void robotastar2_AmigaStatsLog(void); // robot/pathing/robotastar2.cpp
+
+static void AmigaAutoRndTick(void)
+{
+	static sint32 s_rounds = -2;    // -2: not asked yet, -1: off
+	static int    s_state  = 0;
+	static uint32 s_mark   = 0;
+
+	if (s_rounds == -2)
+	{
+		char value[16];
+		s_rounds = amiga_env_value("CTP2_AUTORND", value, sizeof(value)) ? atoi(value) : -1;
+		if (s_rounds <= 0) s_rounds = -1;
+	}
+	if (s_rounds < 0) return;
+
+	uint32 const now = GetTickCount();
+
+	switch (s_state)
+	{
+	case 0:     // the game loads and settles on the player's turn
+		if (g_civApp && g_civApp->IsGameLoaded() && g_tiledMap && g_chatBox
+		&&  g_selected_item
+		&&  g_selected_item->GetCurPlayer() == g_selected_item->GetVisiblePlayer()
+		&& !g_gevManager->EventsPending())
+		{
+			s_mark  = now;
+			s_state = 1;
+		}
+		break;
+
+	case 1:
+		if (now - s_mark >= 5000)
+		{
+			sint32 const player = g_selected_item->GetVisiblePlayer();
+			amiga_log("AutoRnd: %ld rounds from round %ld\n", (long)s_rounds,
+			          (long)(g_player[player] ? g_player[player]->GetCurRound() : -1));
+
+			// ENV:CTP2_AUTORND_AI: the AI plays the player's empire too (a
+			// discovery or a request waits for an answer otherwise), and it is
+			// handed back before the save.
+			bool const attach = amiga_env_flag("CTP2_AUTORND_AI") != 0;
+			char command[32];
+			if (attach)
+			{
+				sprintf(command, "/attach %ld", (long)player);
+				g_chatBox->RunCommand(command);
+			}
+
+			sprintf(command, "/rnd %ld", (long)s_rounds);
+			amiga_prof_write(NULL);     // with ENV:CTP2_PROF: the rounds alone
+			uint32 const t0 = amiga_ticks_ms();
+			g_chatBox->RunCommand(command);
+			amiga_log("AutoRnd: done in %lu ms\n", (unsigned long)(amiga_ticks_ms() - t0));
+			amiga_prof_write("RAM:ctp2prof.bin");
+			robotastar2_AmigaStatsLog();    // with ENV:CTP2_ASTATS
+
+			if (attach)
+			{
+				sprintf(command, "/detach %ld", (long)player);
+				g_chatBox->RunCommand(command);
+			}
+
+			if (!gDone)
+			{
+				g_civApp->AutoSave(g_selected_item->GetVisiblePlayer(), true);
+				gamefile_AmigaSaveFlush();
+				amiga_log("AutoRnd: quick-saved, quitting\n");
+			}
+			gDone   = TRUE;
+			s_state = 2;
+		}
+		break;
+
+	default:
+		break;
+	}
+}
 #endif // __AUI_USE_AMIGA__
 
 bool ui_CheckForScroll(void)
@@ -2505,6 +2596,7 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 
 		if (s_bench.on < 0) s_bench.on = amiga_env_flag("CTP2_BENCH") ? 1 : 0;
 		if (s_bench.on) AmigaBenchTick();
+		AmigaAutoRndTick();
 
 		// The sound ring, ahead of the player.
 		amiga_audio_update();

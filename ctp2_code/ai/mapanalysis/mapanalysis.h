@@ -303,6 +303,23 @@ private:
 	DoubleVector m_productionHandicapRatio;
 	DoubleVector m_goldHandicapRatio;
 	DoubleVector m_scienceHandicapRatio;
+
+#if defined(CTP2_AMIGA_BUILD)
+	// Amiga builds: each player's empire centre as last computed, with what
+	// it was computed from: the cities' positions in list order and the
+	// move cost version (Cell::MoveCostVersion). Player::CalcEmpireCenter
+	// is a path search per city, done for every player at the start of
+	// every player's turn; with the same cities and move costs it finds
+	// the same centre.
+	struct EmpireCenterMemo
+	{
+		bool                  valid;
+		uint32                moveCostVersion;
+		std::vector<MapPoint> cities;
+		MapPoint              center;
+	};
+	std::vector<EmpireCenterMemo> m_empireCenterMemo;
+#endif
 };
 
 #endif // __MAP_ANALYSIS_H__

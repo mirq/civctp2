@@ -199,6 +199,9 @@ int amiga_platform_init(void)
 	          "68060"
 #endif
 	         );
+	/* Where the code was loaded: a crash's PC (a guru, a requester) less this,
+	 * plus amiga_log's address in the link map, is the place in the source. */
+	amiga_log("amiga_log at %08lx\n", (unsigned long)(uintptr_t)&amiga_log);
 
 	return 1;
 }

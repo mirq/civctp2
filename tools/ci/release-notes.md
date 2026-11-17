@@ -11,6 +11,11 @@ Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS), MorphOS and ARO
 | CTP2-Linux-x86_64-@VERSION@.tar.gz | Linux (SDL2) build |
 | SHA256SUMS.txt | Checksums |
 
+## New in 0.4
+
+- **Faster AI turns, the same AI.** The computer players make exactly the same moves as before (checked save against save), with less work: answers that cannot change during a turn are worked out once instead of over and over, and the 68060 version is compiled harder where the AI spends its time. Measured on a 68060 at 50 MHz with six computer players: a late-game round (turn 191) takes 150 s instead of 251 s (−40 %), a mid-game round (turn 101) about a quarter less. Most of what is left is the AI's route finding.
+- Fonts that are loaded again (after changing the screen size or language) are no longer searched for under a wrong name.
+
 ## New in 0.3
 
 - **AROS x86_64** (ABIv11): a native build, `ctp2.aros`, with its own package (tested in Linux-hosted AROS 2026.09: menu, new game, turns, quit). It takes a 16-bit screen when the display has one, else a 32-bit one; sound through AHI. Start it from `CTP2/ctp2_code/ctp` (double-click `ctp2.aros`, or from a Shell); settings are the ENV: variables in `README-Amiga.md`.

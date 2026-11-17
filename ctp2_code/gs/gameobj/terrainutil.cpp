@@ -57,6 +57,8 @@
 //   race has started. (01-Jul-2009 Maq)
 // - Added terrainutil_GetHealRate to suppurt tileimprovement healing (24-Jul-2009 EPW)
 // - Amiga builds: removed borders out of view do not paint the map again.
+// - Amiga builds: terrainutil_GetTerrainEffect answers from a table built
+//   once from the databases.
 //
 //----------------------------------------------------------------------------
 
@@ -68,6 +70,9 @@
 #include "MapPoint.h"
 #include "World.h"
 #include "TerrainImprovementRecord.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include <vector>
+#endif
 #include "Cell.h"
 #include "player.h"
 #include "UnitDynArr.h"
@@ -276,9 +281,87 @@ const TerrainImprovementRecord::Effect *terrainutil_GetTerrainEffect(const Terra
 	return terrainutil_GetTerrainEffect(rec, (sint32)g_theWorld->GetCell(pos)->GetTerrainType());
 }
 
+#if defined(CTP2_AMIGA_BUILD)
+// The answer of terrainutil_GetTerrainEffect for every improvement record of
+// the database and every terrain type, worked out once: the AI's road paths
+// and tile improvement choices ask it for every cell they look at, and each
+// time it walked the record's effects and their terrain lists.
+namespace
+{
+	std::vector<const TerrainImprovementRecord *>         s_effectRecs;     // the record of each index
+	std::vector<const TerrainImprovementRecord::Effect *> s_effects;        // [index * s_effectTerrains + terrain]
+	sint32                                                s_effectTerrains = 0;
+
+	const TerrainImprovementRecord::Effect * EffectByWalk(const TerrainImprovementRecord *rec, sint32 terrainType)
+	{
+		for (sint32 i = 0; i < rec->GetNumTerrainEffect(); ++i)
+		{
+			const TerrainImprovementRecord::Effect * effect = rec->GetTerrainEffect(i);
+
+			if (effect)
+			{
+				for (sint32 j = 0; j < effect->GetNumTerrain(); ++j)
+				{
+					if (effect->GetTerrainIndex(j) == terrainType)
+					{
+						return effect;
+					}
+				}
+			}
+		}
+
+		return rec->GetEffectPtr();
+	}
+
+	void BuildEffectTable()
+	{
+		sint32 const imps     = g_theTerrainImprovementDB->NumRecords();
+		sint32 const terrains = g_theTerrainDB->NumRecords();
+
+		s_effectRecs.resize(imps);
+		s_effects.resize(imps * terrains);
+		s_effectTerrains = terrains;
+
+		for (sint32 i = 0; i < imps; ++i)
+		{
+			const TerrainImprovementRecord * rec = g_theTerrainImprovementDB->Get(i);
+			s_effectRecs[i] = rec;
+			for (sint32 t = 0; t < terrains; ++t)
+			{
+				s_effects[i * terrains + t] = EffectByWalk(rec, t);
+			}
+		}
+	}
+}
+
+void terrainutil_AmigaForgetTables(void)
+{
+	std::vector<const TerrainImprovementRecord *>().swap(s_effectRecs);
+	std::vector<const TerrainImprovementRecord::Effect *>().swap(s_effects);
+	s_effectTerrains = 0;
+}
+#endif
+
 const TerrainImprovementRecord::Effect *terrainutil_GetTerrainEffect(const TerrainImprovementRecord *rec,
 																	 sint32 terrainType)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	// From the table when it holds this very record (not, for instance,
+	// a government's variant of it); otherwise walked as below.
+	if (s_effectRecs.empty() && g_theTerrainImprovementDB && g_theTerrainDB)
+	{
+		BuildEffectTable();
+	}
+
+	sint32 const index = rec->GetIndex();
+	if (index >= 0 && index < static_cast<sint32>(s_effectRecs.size())
+	&&  s_effectRecs[index] == rec
+	&&  terrainType >= 0 && terrainType < s_effectTerrains)
+	{
+		return s_effects[index * s_effectTerrains + terrainType];
+	}
+#endif
+
 	for (sint32 i = 0; i < rec->GetNumTerrainEffect(); ++i)
     {
 		const TerrainImprovementRecord::Effect * effect = rec->GetTerrainEffect(i);
