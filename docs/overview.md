@@ -97,7 +97,7 @@ libnix `getenv()` does not read `ENV:`. The code uses `amiga_env_value` /
 | `CTP2_CHECK` | n: every n-th copy the card is read back and compared with the picture, and each scroll's result with a fresh repaint; differences go to `ctp2.log` |
 | `CTP2_SOLIDROWS` | `0`: tiles are painted pixel by pixel as before (default: rows without a transition are copied whole) |
 | `CTP2_TEST` | `1`: F9 explores the whole map, for display checks |
-| `CTP2_PERF` | `1`: per-phase frame timings, copy statistics, slow events, the "Big present" callers and the cursor wait, every 3 s in `ctp2.log` |
+| `CTP2_PERF` | `1`: per-phase frame timings, copy statistics, slow events, the "Big present" callers and the cursor wait, every 3 s in `ctp2.log`; a "Center:" line per map centring (radar and map ms) |
 | `CTP2_LOGSYNC` | writes `ctp2.log` line by line, for hangs and for load-step timing |
 
 ## Source map

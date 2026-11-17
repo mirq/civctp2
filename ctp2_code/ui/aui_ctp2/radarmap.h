@@ -191,6 +191,12 @@ private:
 	RECT          m_mapViewRect;
 	MapPoint      m_lastCenteredPoint;
 	MapPoint      m_displayOffset[k_MAX_PLAYERS]; // Shifted x and y value for each player (Hotseat)
+#if defined(CTP2_AMIGA_BUILD)
+	// CenterMap's full render waits for the next copy to the screen
+	// (UpdateMap): the AI's turns centre the map again and again with
+	// nothing shown in between, ~0.4 s a render on a 68060.
+	bool          m_renderPending = false;
+#endif
 };
 
 extern RadarMap *g_radarMap;

@@ -1977,6 +1977,12 @@ Player * RadarMap::GetVisiblePlayerToRender()
 //---------------------------------------------------------------------------
 void RadarMap::RenderMap(aui_Surface * surface)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	if (surface == m_mapSurface)
+	{
+		m_renderPending = false;
+	}
+#endif
 	Player *player = GetVisiblePlayerToRender();
 
 	if (!player)
@@ -2194,6 +2200,12 @@ void RadarMap::RenderViewRect(aui_Surface & surface, sint32 x, sint32 y)
 //---------------------------------------------------------------------------
 void RadarMap::UpdateMap(aui_Surface & surface, sint32 x, sint32 y)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	if (m_renderPending)
+	{
+		RenderMap(m_mapSurface);   // clears m_renderPending
+	}
+#endif
 	RECT destRect = {x, y, x + Width(), y + Height() };
 	RECT srcRect  = {0, 0, Width(), Height()};
 
@@ -2272,8 +2284,14 @@ MapPoint RadarMap::CenterMap(const MapPoint & pos)
 	{
 		return lastPoint;
 	}
-#endif
+
+	// The picture does not depend on the view either: the full render (the
+	// original's, to show what changed without a RedrawTile) is done when
+	// the radar is next shown (UpdateMap), once for any number of centrings.
+	m_renderPending = true;
+#else
 	RenderMap(m_mapSurface);
+#endif
 
 	return lastPoint;
 }
@@ -2334,6 +2352,12 @@ void RadarMap::DoRedrawTile(aui_Surface & surface, const Player & player, const 
 //---------------------------------------------------------------------------
 void RadarMap::RedrawTile(const MapPoint & pos)
 {
+#if defined(CTP2_AMIGA_BUILD)
+	if (m_renderPending)
+	{
+		return;   // the whole picture is rendered before it is shown
+	}
+#endif
 	Player * player = GetVisiblePlayerToRender();
 	if (!player) {
 		return;

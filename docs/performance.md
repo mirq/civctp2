@@ -72,6 +72,7 @@ less than about a quarter of the compared pixels changed. See
 | `-O3` for the pathing, map, unit-data and vision files (`AMIGA_O3_FILES` in `Makefile.amiga68k`) | turn 191, 1 round: 184.6 → 172.8 s; turn 101, 5 rounds: 102.6 → 95.5 s (all 6 players AI); quick-saves identical |
 | transport/airlift costs kept per cell and search (`RobotAstar2::IsNextToForeignerKept`, `CargoCanUnloadAtKept`): eight neighbours and every cargo unit, for every way into a cell; `MapPoint ==/!=`, `World::IsLand/IsMountain/IsTunnel` inline | turn 191: 172.8 → 149.6 s (path searches 115 → 74 s); turn 101: 95.5 → 94.3 s |
 | A* skips `EntryCost` for a cell it has already seen when even the least possible entry cost could not make the way through the current cell cheaper (`Astar::MinEntryCost`: `RobotAstar2::EntryCost` never allows less than 1.0, `DecayOrtho` takes 5 %; single-precision rounding is monotonic, so the original does nothing in exactly those cases); the usual neighbour step inline in `FindPath` (`astar_Neighbour`) | turn 191: 149.6 → 125.5 s, 444,001 of the round's `EntryCost` calls skipped, path searches 74 → 53 s; turn 101: 94.3 → 90.0 s; quick-saves identical, also against `CTP2_AICACHE 0` |
+| radar: `RadarMap::CenterMap`'s full render waits for the next copy to the screen (`UpdateMap`), once for any number of centrings; `RedrawTile` skipped while it is pending (the picture does not depend on the view; the original rendered it whole on every centring to show what changed) | turn 191, 21 centrings in a round (~0.38 s radar + ~0.5 s map each): 126.9 → 118.0 s with `EnemyMoves=No`; 232.6 → 229.5 s with `EnemyMoves=Yes` (the radar is shown between the animated moves) |
 
 ## Current figures (A4000, 2026-11-13)
 
@@ -103,7 +104,9 @@ transport caches: `IsNextToForeigner` 19 s, cargo unload tests 18 s), the
 AI's goal logic itself 4 %, map redraw at the end of the round 12 %. No
 68060-trapping instruction in the game's code; FPU instructions ~2 % of
 the samples, math library calls 0.03 %. Round time: 251 s (original) →
-190 s (caches) → 173 s (`-O3`) → 150 s (transport caches, inlining) → 125.5 s (A* skips steps that cannot help).
+190 s (caches) → 173 s (`-O3`) → 150 s (transport caches, inlining) → 125.5 s (A* skips steps that cannot help) → 118.0 s (radar render deferred). With the
+profile's `EnemyMoves=Yes` the same round takes ~230 s: ~105 s of it are the
+enemy units' moves shown one after another, 29 centrings ~12 s.
 
 AI turns on a saved game (Amiberry, 2026-11-17, turn-101 test game, 6 AI
 players, `CTP2_AUTORND 5`, see [testing.md](testing.md)): 75.1 s for 5

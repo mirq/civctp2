@@ -80,6 +80,9 @@
 #include "SpriteState.h"
 #include "spriteutils.h"
 #include "tiledmap.h"               // g_tiledMap
+#if defined(__AUI_USE_AMIGA__)
+#include "amiga_platform.h"         // amiga_perf, amiga_log
+#endif
 #include "tileutils.h"
 #include "TradeActor.h"
 #include "TurnCnt.h"                // g_turn
@@ -395,8 +398,18 @@ protected:
 		// and a view that did not move is left alone (TiledMap). With the
 		// radar map's render, a centring took ~0.5 s on an A4000.
 		RECT const before = g_tiledMap->GetMapViewRect();
+		AMIGA_PERF_BEGIN(t0);
 		g_radarMap->CenterMap(pos);
+		AMIGA_PERF_BEGIN(t1);
 		sint32 const shifted = g_tiledMap->AmigaRefreshMoved(before);
+		if (amiga_perf)
+		{
+			// ENV:CTP2_PERF: what each centring costs (radar, map).
+			uint64_t const t2 = amiga_ticks_us();
+			amiga_log("Center: %d,%d radar %lu ms, map %lu ms, shifted %ld\n",
+			          pos.x, pos.y, (unsigned long)((t1 - t0) / 1000),
+			          (unsigned long)((t2 - t1) / 1000), (long)shifted);
+		}
 		if (shifted < 0) return;
 #else
 		g_radarMap->CenterMap(pos);
