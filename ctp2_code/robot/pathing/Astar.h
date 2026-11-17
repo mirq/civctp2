@@ -86,6 +86,14 @@ protected:
 	// as a single player.
 	virtual sint32 GetArmyId() const { return -1; }
 
+#if defined(CTP2_AMIGA_BUILD)
+	// A cost no entry that EntryCost allows (returns true for) is ever
+	// below, after DecayOrtho; negative: no such bound. FindPath then skips
+	// EntryCost for a cell it has seen when even that cost could not make
+	// the way through the cell cheaper - the original would do nothing there.
+	virtual float MinEntryCost() const { return -1.0f; }
+#endif
+
 	virtual void RecalcEntryCost(AstarPoint *parent,
 	    AstarPoint *node, float &new_entery_cost,
 	    bool &new_is_zoc, ASTAR_ENTRY_TYPE &entry);
@@ -125,6 +133,11 @@ public:
 	              const sint32 cutoff,
 	              sint32 &nodes_opened);
 };
+
+#if defined(CTP2_AMIGA_BUILD)
+// EntryCost calls FindPath skipped (MinEntryCost), for ENV:CTP2_ASTATS.
+extern uint32 g_astarSkippedEntryCosts;
+#endif
 
 extern void Astar_Init();
 extern void Astar_Cleanup();

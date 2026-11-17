@@ -123,6 +123,11 @@ private:
 	// m_dangerValue[cell] holds the answer.
 	bool CheckIsDangerForPosKept(const MapPoint & pos);
 
+	// EntryCost raises an allowed entry cost to at least 1.0, DecayOrtho
+	// takes 5 % off: never below 0.95. 0.9 leaves room. ENV:CTP2_AICACHE=0:
+	// no bound, every cell asked as before.
+	float MinEntryCost() const;
+
 	// The same for the transport and airlift costs: whether a cell is next
 	// to a foreign army that can attack (World::IsNextToForeigner, eight
 	// neighbours) and whether the army's cargo can unload there

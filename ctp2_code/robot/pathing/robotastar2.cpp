@@ -578,9 +578,10 @@ void robotastar2_AmigaStatsPass(void)
 void robotastar2_AmigaStatsLog(void)
 {
 	if (!robotastar2_AmigaStatsOn()) return;
-	amiga_log("AStats: %lu searches in %lu passes, %lu ms, %lu nodes opened, %lu over half the cutoff, %lu repeats in a pass\n",
+	amiga_log("AStats: %lu searches in %lu passes, %lu ms, %lu nodes opened, %lu over half the cutoff, %lu repeats in a pass, %lu entry costs skipped\n",
 	          (unsigned long)s_astatCalls, (unsigned long)s_astatPasses, (unsigned long)(s_astatUs / 1000),
-	          (unsigned long)s_astatNodes, (unsigned long)s_astatBig, (unsigned long)s_astatRepeats);
+	          (unsigned long)s_astatNodes, (unsigned long)s_astatBig, (unsigned long)s_astatRepeats,
+	          (unsigned long)g_astarSkippedEntryCosts);
 }
 
 //----------------------------------------------------------------------------
@@ -595,6 +596,11 @@ void robotastar2_AmigaStatsLog(void)
 //              asked every time, as before.
 //
 //----------------------------------------------------------------------------
+float RobotAstar2::MinEntryCost() const
+{
+	return Agent::AI_Cache_On() ? 0.9f : -1.0f;
+}
+
 sint32 RobotAstar2::KeptIndex(const MapPoint & pos)
 {
 	if (!Agent::AI_Cache_On())
