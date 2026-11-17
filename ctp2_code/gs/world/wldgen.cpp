@@ -929,7 +929,11 @@ bool World::IsNextToForeigner(const MapPoint &pos, PLAYER_INDEX owner) const
 	MapPoint next;
 	for(sint16 dir = 0; dir < NOWHERE; ++dir)
 	{
+#if defined(CTP2_AMIGA_BUILD) && defined(_SMALL_MAPPOINTS)
+		if(world_Neighbour(pos, dir, next))
+#else
 		if(pos.GetNeighborPosition(static_cast<WORLD_DIRECTION>(dir), next))
+#endif
 		{
 			Cell * cell = g_theWorld->GetCell(next);
 

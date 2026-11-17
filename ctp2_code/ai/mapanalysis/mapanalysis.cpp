@@ -34,7 +34,8 @@
 // - Fixed AI city rank calculation. (9-Nov-2009 Martin Gühmann)
 // - Separated the value map from the city value map. (11-Nov-2019 Martin Gühmann)
 // - Amiga builds: the empire centres are kept while the cities and the move
-//   costs stay the same (CalcEmpireCenter, EmpireCenterMemo).
+//   costs stay the same (CalcEmpireCenter, EmpireCenterMemo); only the
+//   cells the searches read count (CityAstar::CostReads).
 //
 //----------------------------------------------------------------------------
 
@@ -53,6 +54,10 @@
 #include "c3debug.h"
 #include "CitySizeRecord.h"
 #include "World.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include <algorithm>
+#include "CityAstar.h"        // CityAstar::CostReads
+#endif
 #include "TradeRouteData.h"
 #include "Cell.h"
 #include "Strengths.h"
@@ -636,16 +641,47 @@ void MapAnalysis::CalcEmpireCenter(const size_t playerId)
 		uint32 const version = Cell::MoveCostVersion();
 
 		bool same = memo.valid
-		         && memo.moveCostVersion == version
 		         && memo.cities.size() == static_cast<size_t>(num_cities);
 		for (sint32 i = 0; same && i < num_cities; ++i)
 		{
 			same = (memo.cities[i] == player_ptr->m_all_cities->Get(i)->GetPos());
 		}
+		if (same && memo.moveCostVersion != version)
+		{
+			// Only the cells the searches read count (CityAstar::CostReads).
+			for (size_t i = 0; same && i < memo.readCells.size(); ++i)
+			{
+				same = (static_cast<sint16>(g_theWorld->GetCell(memo.readCells[i])->GetMoveCost()) == memo.readCosts[i]);
+			}
+			if (same)
+			{
+				memo.moveCostVersion = version;
+			}
+		}
 
 		if (!same)
 		{
+			static CityAstar::CostReads reads;
+			size_t const cells = static_cast<size_t>(g_theWorld->GetXWidth()) * g_theWorld->GetYHeight();
+			if (reads.stamp.size() != cells)
+			{
+				reads.stamp.assign(cells, 0);
+				reads.gen = 0;
+			}
+			if (++reads.gen == 0)
+			{
+				std::fill(reads.stamp.begin(), reads.stamp.end(), 0);
+				reads.gen = 1;
+			}
+			reads.cells.clear();
+			reads.costs.clear();
+
+			CityAstar::s_amigaCostReads = &reads;
 			memo.center = player_ptr->CalcEmpireCenter();
+			CityAstar::s_amigaCostReads = NULL;
+
+			memo.readCells = reads.cells;
+			memo.readCosts = reads.costs;
 			memo.cities.resize(num_cities);
 			for (sint32 i = 0; i < num_cities; ++i)
 			{

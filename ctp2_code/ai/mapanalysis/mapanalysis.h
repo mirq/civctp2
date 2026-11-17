@@ -317,6 +317,11 @@ private:
 		uint32                moveCostVersion;
 		std::vector<MapPoint> cities;
 		MapPoint              center;
+		// The cells whose move cost the searches read, and those costs
+		// (CityAstar::CostReads): unchanged, the searches go the same way
+		// even when the move cost version moved on (a road elsewhere).
+		std::vector<MapPoint> readCells;
+		std::vector<sint16>   readCosts;
 	};
 	std::vector<EmpireCenterMemo> m_empireCenterMemo;
 #endif

@@ -1289,7 +1289,11 @@ bool UnitAstar::CheckIsDangerForPos(const MapPoint & pos)
 
 	for(sint32 i = 0; i <= SOUTH; i++)
 	{
+#if defined(CTP2_AMIGA_BUILD) && defined(_SMALL_MAPPOINTS)
+		if (!world_Neighbour(pos, i, neighbor)) continue;
+#else
 		if (!pos.GetNeighborPosition(WORLD_DIRECTION(i), neighbor)) continue;
+#endif
 
 		if (neighbor == start || neighbor == m_dest)
 		{

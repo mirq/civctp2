@@ -35,6 +35,10 @@
 #include "gstypes.h"
 #include "Astar.h"
 
+#if defined(CTP2_AMIGA_BUILD)
+#include <vector>
+#endif
+
 class CityAstar : public Astar
 {
 	PLAYER_INDEX m_owner;
@@ -50,6 +54,20 @@ class CityAstar : public Astar
 	sint32 GetArmyId() const;
 
 public:
+#if defined(CTP2_AMIGA_BUILD)
+	// Amiga builds: when set, FindSimpleDistancePath's searches add every
+	// cell whose move cost they read (once) to it: such a search reads
+	// nothing else of the map, so with those costs the same it finds the
+	// same path (MapAnalysis::CalcEmpireCenter).
+	struct CostReads
+	{
+		std::vector<MapPoint> cells;
+		std::vector<sint16>   costs;
+		std::vector<uint32>   stamp;   // per cell: == gen when in cells
+		uint32                gen = 0;
+	};
+	static CostReads * s_amigaCostReads;
+#endif
 	CityAstar()
 	:
 	    Astar            (),

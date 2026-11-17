@@ -32,7 +32,7 @@
 // - Amiga builds: no EntryCost for a cell already seen when its known cost
 //   is no more than the cost to here plus the least possible entry cost
 //   (MinEntryCost); the path via here could not be cheaper.
-// - Amiga builds: the usual neighbour step inline (astar_Neighbour).
+// - Amiga builds: the usual neighbour step inline (world_Neighbour, World.h).
 //
 //----------------------------------------------------------------------------
 
@@ -88,48 +88,6 @@ long int g_closed_nodes   = 0;
 #if defined(CTP2_AMIGA_BUILD)
 uint32 g_astarSkippedEntryCosts = 0;
 
-#if defined(_SMALL_MAPPOINTS)
-extern MapPoint g_mp_size;
-
-// MapPoint::GetNeighborPosition's usual case (a point of a map that does not
-// wrap north-south), the same steps, here where FindPath can inline it: the
-// search asks for eight neighbours of every cell it expands. Anything else
-// goes to the real one.
-static inline bool astar_Neighbour(MapPoint const & p, sint32 dir, MapPoint & pos)
-{
-	static signed char const s_step[8][2] =
-	{
-		{  0, -2 }, {  1, -1 }, {  2,  0 }, { -1, -1 },   // N NE E NW
-		{  1,  1 }, { -2,  0 }, { -1,  1 }, {  0,  2 }    // SE W SW S
-	};
-	sint32 const w = g_mp_size.x;
-	sint32 const h = g_mp_size.y;
-	if (static_cast<unsigned>(dir) < 8 && !g_theWorld->IsYwrap()
-	 && p.x >= 0 && p.x < w && p.y >= 0 && p.y < h)
-	{
-		sint32 const dx = s_step[dir][0];
-		sint32 const dy = s_step[dir][1];
-		sint32 const ny = p.y + dy;
-		bool ok = (ny >= 0 && ny < h);
-		if (ok && !g_theWorld->IsXwrap())
-		{
-			sint32 const w2 = 2 * w;
-			sint32 X0 = 2 * p.x + p.y;
-			while (X0 >= w2) X0 -= w2;
-			X0 += dx;
-			ok = (X0 >= 0 && X0 < w2);
-		}
-		sint32 nx = p.x + ((dx - dy) >> 1);
-		if (nx < 0)       nx += w;
-		else if (nx >= w) nx -= w;
-		if (!ok) return false;
-		pos.x = static_cast<sint16>(nx);
-		pos.y = static_cast<sint16>(ny);
-		return true;
-	}
-	return p.GetNeighborPosition(WORLD_DIRECTION(dir), pos);
-}
-#endif
 #endif
 
 float Astar::EstimateFutureCost(const MapPoint &pos, const MapPoint &dest)
@@ -398,7 +356,7 @@ bool Astar::FindPath
 		{
 			static MapPoint next_pos;
 #if defined(CTP2_AMIGA_BUILD) && defined(_SMALL_MAPPOINTS)
-			if (!astar_Neighbour(best->m_pos, i, next_pos)) continue;
+			if (!world_Neighbour(best->m_pos, i, next_pos)) continue;
 #else
 			if (!best->m_pos.GetNeighborPosition(WORLD_DIRECTION(i), next_pos)) continue;
 #endif

@@ -148,6 +148,17 @@ private:
 	bool                m_dangerRobot  = false;
 	MapPoint            m_dangerStart;
 	MapPoint            m_dangerDest;
+
+	// Inside one UnitAstar::FindPath (m_keptInSearch) nothing KeptIndex
+	// compares can change once the search is set up: it is compared on the
+	// first call only (m_keptChecked), with the map's size and whether the
+	// army carries cargo (KeptHasCargo) kept from that call.
+	bool                m_keptInSearch = false;
+	bool                m_keptChecked  = false;
+	bool                m_keptHasCargo = false;
+	sint32              m_keptWidth    = 0;
+	sint32              m_keptCells    = 0;
+	bool KeptHasCargo();
 #endif
 };
 

@@ -74,6 +74,8 @@ less than about a quarter of the compared pixels changed. See
 | A* skips `EntryCost` for a cell it has already seen when even the least possible entry cost could not make the way through the current cell cheaper (`Astar::MinEntryCost`: `RobotAstar2::EntryCost` never allows less than 1.0, `DecayOrtho` takes 5 %; single-precision rounding is monotonic, so the original does nothing in exactly those cases); the usual neighbour step inline in `FindPath` (`astar_Neighbour`) | turn 191: 149.6 → 125.5 s, 444,001 of the round's `EntryCost` calls skipped, path searches 74 → 53 s; turn 101: 94.3 → 90.0 s; quick-saves identical, also against `CTP2_AICACHE 0` |
 | radar: `RadarMap::CenterMap`'s full render waits for the next copy to the screen (`UpdateMap`), once for any number of centrings; `RedrawTile` skipped while it is pending (the picture does not depend on the view; the original rendered it whole on every centring to show what changed) | turn 191, 21 centrings in a round (~0.38 s radar + ~0.5 s map each): 126.9 → 118.0 s with `EnemyMoves=No`; 232.6 → 229.5 s with `EnemyMoves=Yes` (the radar is shown between the animated moves) |
 | `aui_DirtyList::Minimize` on an array, pairs that cannot merge passed over without the `Rectangle_SmartConsolidate` call (the same merges in the same order: 200,000 random lists compared on the host) | window lists of ~360 rectangles while units move on screen; ~12 s of CPU in a turn-191 round with `EnemyMoves=Yes`, but the round is not shorter: moves are paced (`10 - UnitSpeed` steps of 75 ms each), the frames just get cheaper |
+| path searches: the usual neighbour step inline for the danger and foreign-army tests too (`world_Neighbour`, `World.h`); what the kept per-cell answers depend on compared once per search, not per cell (`RobotAstar2::KeptIndex`) | turn 191: 116.0 → 106.7 s (two runs each, within 1 s), path searches 52.5 → 43.9 s; measured first: only 6 % of a search's entry costs are asked twice, and keeping the danger answers across searches would save 3 % of them, so no more caching there |
+| empire centres kept while the cells their searches read keep their move costs (`CityAstar::CostReads`), not only while no move cost changed anywhere | turn 101, 5 rounds: `AiBeginMapAnalysis` 3.0 → 0.8 s; turn 191: 6.0 → 5.6 s (the read cells change every round there) |
 
 ## Current figures (A4000, 2026-11-13)
 
@@ -105,7 +107,7 @@ transport caches: `IsNextToForeigner` 19 s, cargo unload tests 18 s), the
 AI's goal logic itself 4 %, map redraw at the end of the round 12 %. No
 68060-trapping instruction in the game's code; FPU instructions ~2 % of
 the samples, math library calls 0.03 %. Round time: 251 s (original) →
-190 s (caches) → 173 s (`-O3`) → 150 s (transport caches, inlining) → 125.5 s (A* skips steps that cannot help) → 118.0 s (radar render deferred). With the
+190 s (caches) → 173 s (`-O3`) → 150 s (transport caches, inlining) → 125.5 s (A* skips steps that cannot help) → 118.0 s (radar render deferred) → ~107 s (inline neighbour step, cheaper cache index). With the
 profile's `EnemyMoves=Yes` the same round takes ~230 s: ~105 s of it are the
 enemy units' moves shown one after another, 29 centrings ~12 s.
 

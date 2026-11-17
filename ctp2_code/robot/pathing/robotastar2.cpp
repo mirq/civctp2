@@ -85,7 +85,7 @@ bool RobotAstar2::TransportPathCallback (const bool & can_enter,
 		bool wrong_cont = ( cont != m_transDestCont ) && (!g_theWorld->IsCity(pos));
 
 #if defined(CTP2_AMIGA_BUILD)
-		bool occupied = (m_army->HasCargo() && (!CargoCanUnloadAtKept(pos)));
+		bool occupied = (KeptHasCargo() && (!CargoCanUnloadAtKept(pos)));
 #else
 		bool occupied = (m_army->HasCargo() && (!m_army.CanAtLeastOneCargoUnloadAt(pos, false, !m_is_robot)));
 #endif
@@ -211,7 +211,11 @@ bool RobotAstar2::TransportPathCallback (const bool & can_enter,
 				MapPoint neighbor;
 				for(sint32 dir = 0; dir <= SOUTH; ++dir)
 				{
+#if defined(CTP2_AMIGA_BUILD) && defined(_SMALL_MAPPOINTS)
+					if(world_Neighbour(pos, dir, neighbor) && neighbor == m_dest)
+#else
 					if(pos.GetNeighborPosition(WORLD_DIRECTION(dir), neighbor) && neighbor == m_dest)
+#endif
 					{
 						posNextToDest = true;
 						break;
@@ -451,6 +455,16 @@ bool RobotAstar2::FindPath( const PathType & pathType,
 	}
 
 	AI_DPRINTF(k_DBG_ASTAR, army.GetOwner(), -1, army.m_id,("\n"));
+#if defined(CTP2_AMIGA_BUILD)
+	// KeptIndex compares what the kept answers read once, on its first call
+	// after UnitAstar::FindPath has set the search up (InitSearch).
+	struct KeptSearch
+	{
+		RobotAstar2 & a;
+		explicit KeptSearch(RobotAstar2 & r) : a(r) { a.m_keptInSearch = true;  a.m_keptChecked = false; }
+		~KeptSearch()                                { a.m_keptInSearch = false; a.m_keptChecked = false; }
+	} keptSearch(*this);
+#endif
 	if(!UnitAstar::FindPath(army,
 	                        nUnits + additionalUnits,
 	                        move_intersection,
@@ -603,6 +617,14 @@ float RobotAstar2::MinEntryCost() const
 
 sint32 RobotAstar2::KeptIndex(const MapPoint & pos)
 {
+	if (m_keptChecked)
+	{
+		sint32 const width = m_keptWidth;
+		if (pos.x < 0 || pos.y < 0 || pos.x >= width || pos.y * width + pos.x >= m_keptCells)
+			return -1;
+		return pos.y * width + pos.x;
+	}
+
 	if (!Agent::AI_Cache_On())
 		return -1;
 
@@ -638,7 +660,20 @@ sint32 RobotAstar2::KeptIndex(const MapPoint & pos)
 		m_dangerRobot = m_is_robot;
 	}
 
+	if (m_keptInSearch)
+	{
+		m_keptChecked  = true;
+		m_keptWidth    = width;
+		m_keptCells    = cells;
+		m_keptHasCargo = m_army->HasCargo();
+	}
+
 	return pos.y * width + pos.x;
+}
+
+bool RobotAstar2::KeptHasCargo()
+{
+	return m_keptChecked ? m_keptHasCargo : m_army->HasCargo();
 }
 
 bool RobotAstar2::CheckIsDangerForPosKept(const MapPoint & pos)

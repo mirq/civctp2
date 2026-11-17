@@ -737,6 +737,51 @@ private:
 
 extern World *g_theWorld;
 
+#if defined(CTP2_AMIGA_BUILD)
+#if defined(_SMALL_MAPPOINTS)
+extern MapPoint g_mp_size;
+
+// Amiga builds: MapPoint::GetNeighborPosition's usual case (a point of a map
+// that does not wrap north-south), the same steps, inline where the path
+// searches ask for neighbours (A*, the danger and foreign-army tests): a
+// call each time cost more than the step. Anything else goes to the real one.
+inline bool world_Neighbour(MapPoint const & p, sint32 dir, MapPoint & pos)
+{
+	static signed char const s_step[8][2] =
+	{
+		{  0, -2 }, {  1, -1 }, {  2,  0 }, { -1, -1 },   // N NE E NW
+		{  1,  1 }, { -2,  0 }, { -1,  1 }, {  0,  2 }    // SE W SW S
+	};
+	sint32 const w = g_mp_size.x;
+	sint32 const h = g_mp_size.y;
+	if (static_cast<unsigned>(dir) < 8 && !g_theWorld->IsYwrap()
+	 && p.x >= 0 && p.x < w && p.y >= 0 && p.y < h)
+	{
+		sint32 const dx = s_step[dir][0];
+		sint32 const dy = s_step[dir][1];
+		sint32 const ny = p.y + dy;
+		bool ok = (ny >= 0 && ny < h);
+		if (ok && !g_theWorld->IsXwrap())
+		{
+			sint32 const w2 = 2 * w;
+			sint32 X0 = 2 * p.x + p.y;
+			while (X0 >= w2) X0 -= w2;
+			X0 += dx;
+			ok = (X0 >= 0 && X0 < w2);
+		}
+		sint32 nx = p.x + ((dx - dy) >> 1);
+		if (nx < 0)       nx += w;
+		else if (nx >= w) nx -= w;
+		if (!ok) return false;
+		pos.x = static_cast<sint16>(nx);
+		pos.y = static_cast<sint16>(ny);
+		return true;
+	}
+	return p.GetNeighborPosition(WORLD_DIRECTION(dir), pos);
+}
+#endif
+#endif
+
 uint32 World_World_GetVersion(void);
 
 #endif

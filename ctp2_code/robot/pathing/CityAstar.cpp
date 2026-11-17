@@ -167,6 +167,20 @@ bool CityAstar::EntryCost
 		cost  = static_cast<float>(entryCell->GetMoveCost());
 		entry = ASTAR_CAN_ENTER;
 
+#if defined(CTP2_AMIGA_BUILD)
+		if(m_simpleDistance && s_amigaCostReads)
+		{
+			CostReads & r = *s_amigaCostReads;
+			sint32 const w = g_theWorld->GetXWidth();
+			size_t const i = static_cast<size_t>(pos.y) * w + pos.x;
+			if (i < r.stamp.size() && r.stamp[i] != r.gen)
+			{
+				r.stamp[i] = r.gen;
+				r.cells.push_back(pos);
+				r.costs.push_back(static_cast<sint16>(entryCell->GetMoveCost()));
+			}
+		}
+#endif
 		if(m_simpleDistance)
 			return true;
 
@@ -186,6 +200,10 @@ bool CityAstar::EntryCost
 
 	return true;
 }
+
+#if defined(CTP2_AMIGA_BUILD)
+CityAstar::CostReads * CityAstar::s_amigaCostReads = NULL;
+#endif
 
 sint32 CityAstar::GetMaxDir(MapPoint &pos) const
 {
