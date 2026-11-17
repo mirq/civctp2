@@ -25,6 +25,8 @@
 // Modifications from the original Activision code:
 //
 // - Standardized code (May 21th 2006 Martin G�hmann)
+// - Amiga builds: Minimize on an array, pairs that cannot merge passed over
+//   without a call (the same merges in the same order).
 //
 //----------------------------------------------------------------------------
 
@@ -33,6 +35,9 @@
 #include "aui_rectangle.h"
 
 #include "aui_dirtylist.h"
+#if defined(__AUI_USE_AMIGA__)
+#include <vector>
+#endif
 
 
 aui_DirtyList::aui_DirtyList(
@@ -199,6 +204,82 @@ AUI_ERRCODE aui_DirtyList::Minimize( void )
 	// itself deleted and its pNext is kept correct across deletions, while
 	// a stale copy of a successor position could be dangling if that very
 	// link was just removed by a merge.
+#if defined(__AUI_USE_AMIGA__)
+	// The same merges in the same order, on an array: the list's links and
+	// a call per pair cost more than the test (with the units' moves shown
+	// a window list holds ~360 rectangles, ~12 s a late-game round on a
+	// 68060). Rectangle_SmartConsolidate merges two rectangles that do not
+	// overlap only when they share their left and right or their top and
+	// bottom edges: other pairs are passed over without the call. The
+	// merged-away rectangles leave the list at the end.
+	size_t const count = L();
+	if (count < 2)
+		return AUI_ERRCODE_OK;
+
+	static std::vector<RECT *> rects;
+	static std::vector<sint32> next;
+	static std::vector<uint8>  gone;
+	rects.resize(count);
+	next.resize(count);
+	gone.assign(count, 0);
+	{
+		ListPos pos = GetHeadPosition();
+		for (size_t i = 0; i < count; ++i)
+		{
+			rects[i] = GetNext(pos);
+			next[i]  = (i + 1 < count) ? sint32(i + 1) : -1;
+		}
+	}
+
+	bool merged = false;
+	for (sint32 cur = 0; cur >= 0; cur = next[cur])
+	{
+		RECT * curRect = rects[cur];
+		sint32 prev = cur;
+		sint32 j    = next[cur];
+		while (j >= 0)
+		{
+			RECT * nextRect = rects[j];
+			bool const overlap = Rectangle_Intersect(curRect, nextRect);
+			RECT conRect;
+			if (   (overlap
+			        || (curRect->left == nextRect->left && curRect->right == nextRect->right)
+			        || (curRect->top == nextRect->top && curRect->bottom == nextRect->bottom))
+			    && Rectangle_SmartConsolidate(&conRect, curRect, nextRect))
+			{
+				gone[j]    = 1;
+				next[prev] = next[j];
+				CopyRect(curRect, &conRect);
+				merged = true;
+
+				prev = cur;
+				j    = next[cur];
+			}
+			else
+			{
+				prev = j;
+				j    = next[j];
+			}
+		}
+	}
+
+	if (merged)
+	{
+		ListPos pos = GetHeadPosition();
+		for (size_t i = 0; i < count; ++i)
+		{
+			ListPos const here = pos;
+			RECT * rect = GetNext(pos);
+			if (gone[i])
+			{
+				m_rectMemory->Delete(rect);
+				DeleteAt(here);
+			}
+		}
+	}
+
+	return AUI_ERRCODE_OK;
+#else
 	ListPos curLinkPos = GetHeadPosition();
 
 	while ( curLinkPos )
@@ -230,6 +311,7 @@ AUI_ERRCODE aui_DirtyList::Minimize( void )
 	}
 
 	return AUI_ERRCODE_OK;
+#endif
 }
 
 
