@@ -248,7 +248,18 @@ AUI_ERRCODE aui_BitmapFont::Load( void )
 	Unload();
 
 	static MBCHAR fullPath[ MAX_PATH + 1 ];
-	if ( g_ui->GetBitmapFontResource()->FindFile( fullPath, m_ttffile ) )
+#if defined(__AUI_USE_AMIGA__)
+	// A reload: m_ttffile already holds the full name found the first time
+	// (with its volume). Searching again would join the font directories
+	// onto it ("fonts/Game:.../timesbd.ttf").
+	bool const resolved = strchr( m_ttffile, ':' ) != NULL;
+#else
+	bool const resolved = false;
+#endif
+	fullPath[0] = '\0';
+	if ( resolved )
+		;
+	else if ( g_ui->GetBitmapFontResource()->FindFile( fullPath, m_ttffile ) )
 		strncpy( m_ttffile, fullPath, MAX_PATH );
 	else if (g_civPaths->FindFile(C3DIR_FONTS, m_ttffile, fullPath, TRUE)) // try C3DIR_FONTS if GetBitmapFontResource fails (e.g. is not yet available)
 		strncpy( m_ttffile, fullPath, MAX_PATH );
