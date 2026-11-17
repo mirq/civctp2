@@ -128,6 +128,13 @@ World::World(const MapPoint & m, const int xw, const int yw)
     m_num_civ_starts        (0),
     m_current_plugin        (NULL),
     m_distanceQueue         (NULL)
+#if defined(CTP2_AMIGA_BUILD)
+    // Was never set: the first FindCityDistances after a load used the
+    // saved costs to the capitol or worked them out, by what the memory held
+    // (a save loaded over a running game played on differently). Every
+    // player's are worked out, as a debug build always does.
+  , m_capitolDistanceDirtyFlags(0xffffffff)
+#endif
 {
     Assert(0 < m_size.x);
     Assert(0 < m_size.y);
@@ -225,6 +232,13 @@ World::World(CivArchive &archive, BOOL fromMapFile)
     m_num_civ_starts        (0),
     m_current_plugin        (NULL),
     m_distanceQueue         (NULL)
+#if defined(CTP2_AMIGA_BUILD)
+    // Was never set: the first FindCityDistances after a load used the
+    // saved costs to the capitol or worked them out, by what the memory held
+    // (a save loaded over a running game played on differently). Every
+    // player's are worked out, as a debug build always does.
+  , m_capitolDistanceDirtyFlags(0xffffffff)
+#endif
 //  m_isXwrap, m_isYwrap, m_size: set by Serialize
 {
 	if ( fromMapFile )

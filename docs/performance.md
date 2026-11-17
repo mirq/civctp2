@@ -159,7 +159,10 @@ EXTRA_CXXFLAGS=-fno-omit-frame-pointer EXTRA_CFLAGS=-fno-omit-frame-pointer`
 game's PC every millisecond (`os/amiga/amiga_prof.c`), with up to 8 code
 addresses further up its stack. `break <process> E` (CTRL-E) writes the
 samples to `RAM:ctp2prof.bin` and starts again, so: CTRL-E, do the slow
-thing, CTRL-E, fetch the file. On the host:
+thing, CTRL-E, fetch the file. A game that hangs never looks at CTRL-E:
+`break <process> F` (CTRL-F) makes the sampler itself write the samples so
+far to `RAM:ctp2hang.bin` (once per run; the last samples show the loop,
+with `CTP2_PROF 2` and its callers). On the host:
 
     ctp2_code/os/amiga/host/amiga-prof.py ctp2prof.bin build/amiga68k/ctp2.debug [top]
 

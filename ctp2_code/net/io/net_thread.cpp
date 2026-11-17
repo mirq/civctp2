@@ -214,6 +214,13 @@ NET_ERR NetThread::Init(NetIOResponse *response)
 									  this,
 									  0,
 									  &m_threadId)) == NULL) {
+#elif defined(CTP2_AMIGA_BUILD)
+	// No thread to start, and so none to wait for: Reset and the destructor
+	// wait for m_exited, and Reset (Network::Cleanup, CivApp::CleanupGame:
+	// loading a save over a running game, back to the main menu) hung there.
+	m_exited = TRUE;
+	if (0) {
+		(void) NetThread_StartThread;
 #else
 	{
 		(void) NetThread_StartThread;

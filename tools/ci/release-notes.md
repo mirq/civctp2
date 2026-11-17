@@ -11,6 +11,12 @@ Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS), MorphOS and ARO
 | CTP2-Linux-x86_64-@VERSION@.tar.gz | Linux (SDL2) build |
 | SHA256SUMS.txt | Checksums |
 
+## New in 0.5
+
+- **Loading a saved game during a game no longer hangs.** Loading a save from inside a running game (and so also going back to the main menu) stopped at the start of the loading bar: the cleanup waited for a network thread that the Amiga versions never start. Thanks to **Fazior** for finding this bug.
+- A save loaded during a game now plays on exactly as one loaded from the main menu (a value of the map was never set, so the cities' distances to the capital could be taken from the save or worked out anew, depending on memory).
+- **AI turns faster again:** the route finding skips steps that cannot lead to a shorter route, the radar map is drawn only when it is shown, and the screen's changed areas are merged faster. A late-game round (turn 191, six computer players, 68060 at 50 MHz) takes 118 s, against 150 s in 0.4 and 251 s before 0.4. The computer players still make exactly the same moves.
+
 ## New in 0.4
 
 - **Faster AI turns, the same AI.** The computer players make exactly the same moves as before (checked save against save), with less work: answers that cannot change during a turn are worked out once instead of over and over, and the 68060 version is compiled harder where the AI spends its time. Measured on a 68060 at 50 MHz with six computer players: a late-game round (turn 191) takes 150 s instead of 251 s (−40 %), a mid-game round (turn 101) about a quarter less. Most of what is left is the AI's route finding.

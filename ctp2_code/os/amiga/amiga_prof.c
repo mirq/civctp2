@@ -145,8 +145,24 @@ static void sample(void)
 	++s_count;
 }
 
+/* CTRL-F to the game: the sampler itself writes the samples so far to
+ * RAM:ctp2hang.bin, with DOS calls (stdio is the main task's) - for a game
+ * that hangs and so never polls CTRL-E. Once per run; the samples stay. */
+static void dump_from_sampler(void)
+{
+	BPTR const f = Open((CONST_STRPTR)"RAM:ctp2hang.bin", MODE_NEWFILE);
+	if (f)
+	{
+		uint32_t head[5] = { 0x43545050u, 2, AMIGA_PROF_ENTRY, s_count, s_waiting };
+		Write(f, head, sizeof(head));
+		Write(f, s_samples, (LONG)(s_count * AMIGA_PROF_ENTRY * 4));
+		Close(f);
+	}
+}
+
 static void sampler(void)
 {
+	int dumped = 0;
 	struct MsgPort *     port = CreateMsgPort();
 	struct timerequest * tr   = port ? (struct timerequest *)CreateIORequest(port, sizeof(*tr)) : NULL;
 	if (tr && OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_MICROHZ, (struct IORequest *)tr, 0) == 0)
@@ -160,6 +176,11 @@ static void sampler(void)
 			Forbid();
 			sample();
 			Permit();
+			if (!dumped && (s_main->tc_SigRecvd & SIGBREAKF_CTRL_F))
+			{
+				dumped = 1;
+				dump_from_sampler();
+			}
 		}
 		CloseDevice((struct IORequest *)tr);
 	}
@@ -217,7 +238,7 @@ void amiga_prof_start(void)
 		s_samples = NULL;
 		return;
 	}
-	amiga_log("Prof: sampling every 1 ms, code %08lx-%08lx; CTRL-E writes RAM:ctp2prof.bin\n",
+	amiga_log("Prof: sampling every 1 ms, code %08lx-%08lx; CTRL-E writes RAM:ctp2prof.bin, CTRL-F RAM:ctp2hang.bin (a hung game)\n",
 	          (unsigned long)s_codeStart, (unsigned long)s_codeEnd);
 }
 

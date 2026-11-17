@@ -112,6 +112,17 @@ inflated game data. In the turn-101 test game one byte (inflated offset
 240040, in a city record) is not initialised and differs from run to run;
 everything else must match.
 
+Loading over a running game (what the load screen does in a game) takes
+another path: the running game is cleaned up first (`CivApp::CleanupGame`).
+`setenv CTP2_RELOAD save/games/Julius/Julius-T191` with
+`-lsave/games/Julius/Julius-Roma-1600BC` loads the first save, waits 5 s
+and loads the second over it (`Reload:` in `ctp2.log`); with
+`CTP2_AUTORND` the rounds then run on it and its quick-save must equal the
+one of a game that loaded `Julius-T191` at start. Until 0.5 this hung in
+`NetThread::Reset` (the Amiga starts no network thread to wait for) and
+then played on differently (`World::m_capitolDistanceDirtyFlags` was never
+set).
+
 Test games (the seeded quick start, `CTP2_SEED 4242`, 6 players, map size
 1, played by the AI; player 1 detached again before saving):
 

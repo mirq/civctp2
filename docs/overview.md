@@ -92,6 +92,7 @@ libnix `getenv()` does not read `ENV:`. The code uses `amiga_env_value` /
 | `CTP2_BENCH` | `1`: a benchmark that runs by itself on a fixed world and quits; times as `Bench:` lines in `ctp2.log` (see [testing.md](testing.md)). `win`: the same for windows (three managers opened, moved and closed) |
 | `CTP2_SEED` | the seed of the world, so that the quick start makes the same one every time |
 | `CTP2_AUTORND` | n: with `-l<save file>` on the command line, the game loads, plays n rounds by itself (`/rnd n`, a `Rnd:` line per round), quick-saves to `save/games/<leader>/QUICKSAVE-<leader>` and quits: AI timings on a saved game (see [testing.md](testing.md)) |
+| `CTP2_RELOAD` | a save file: once the game is up (start it with `-l<save file>` too), that save is loaded over the running game, as the load screen does it; then `CTP2_AUTORND` goes on with the loaded one (a test of loading over a game, see [testing.md](testing.md)) |
 | `CTP2_AICACHE` | `0`: the AI works out everything again each time, as before (default: answers that cannot change within a step are kept, see [performance.md](performance.md); the game is the same either way) |
 | `CTP2_ASTATS` | `1`: with `CTP2_AUTORND`, the AI's path searches counted (`AStats:` line: searches, time, nodes, repeats within a match pass) |
 | `CTP2_CHECK` | n: every n-th copy the card is read back and compared with the picture, and each scroll's result with a fresh repaint; differences go to `ctp2.log` |

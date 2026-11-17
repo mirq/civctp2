@@ -1038,6 +1038,37 @@ void gamefile_AmigaSaveFlush(void);   // gs/fileio/GameFile.cpp
 extern ChatBox * g_chatBox;           // ui/interface/chatbox.cpp
 void robotastar2_AmigaStatsLog(void); // robot/pathing/robotastar2.cpp
 
+// ENV:CTP2_RELOAD=<save file>: a test of loading over a running game, as the
+// load screen does it (CivApp::PostLoadSaveGameAction, CleanupGame first).
+// Once the first game is up and settled, the save is loaded once; with
+// ENV:CTP2_AUTORND the rounds then run on the reloaded game.
+static bool AmigaReloadTick(void)
+{
+	static int    s_state = -1;     // -1: not asked yet, 0: off, 1: wait, 2: done
+	static uint32 s_mark  = 0;
+	static char   s_path[256];
+
+	if (s_state < 0)
+	{
+		s_state = amiga_env_value("CTP2_RELOAD", s_path, sizeof(s_path)) && s_path[0] ? 1 : 0;
+	}
+	if (s_state != 1) return false;
+
+	if (g_civApp && g_civApp->IsGameLoaded() && g_tiledMap && g_selected_item
+	&&  g_selected_item->GetCurPlayer() == g_selected_item->GetVisiblePlayer()
+	&& !g_gevManager->EventsPending())
+	{
+		if (s_mark == 0) s_mark = GetTickCount();
+		if (GetTickCount() - s_mark >= 5000)
+		{
+			amiga_log("Reload: loading %s over the running game\n", s_path);
+			g_civApp->PostLoadSaveGameAction(s_path);
+			s_state = 2;
+		}
+	}
+	return true;    // the rounds wait for the reload
+}
+
 static void AmigaAutoRndTick(void)
 {
 	static sint32 s_rounds = -2;    // -2: not asked yet, -1: off
@@ -1050,6 +1081,7 @@ static void AmigaAutoRndTick(void)
 		s_rounds = amiga_env_value("CTP2_AUTORND", value, sizeof(value)) ? atoi(value) : -1;
 		if (s_rounds <= 0) s_rounds = -1;
 	}
+	if (AmigaReloadTick()) return;
 	if (s_rounds < 0) return;
 
 	uint32 const now = GetTickCount();
