@@ -55,15 +55,49 @@ uint32_t amiga_input_idle_ms(void)
 
 static int port_has_messages(struct MsgPort *port)
 {
-	/* exec's IsMsgPortEmpty(), which is a macro over this. On WarpOS the 68k
-	 * writes the list: the PPC's copy of those lines goes first (a no-op on
-	 * the 68060). */
+	/* exec's IsListEmpty() on the port's own list header: the queued messages
+	 * themselves are not read. On WarpOS with a PCI PowerPC card (Sonnet,
+	 * powerpc.library 17) the PPC sees only its own RAM: Intuition's input
+	 * handler builds the IntuiMessages in the 68k's RAM, where any PPC access
+	 * (even a dcbf) is a Data Storage exception. The port is the game's own
+	 * (OpenWindow on its behalf), in memory the PPC sees. The 68k writes the
+	 * header: the PPC's copy of those lines goes first (a no-op on the
+	 * 68060). */
 	amiga_cache_flush(&port->mp_MsgList, sizeof(port->mp_MsgList));
-	if (port->mp_MsgList.lh_Head)
-	{
-		amiga_cache_flush(port->mp_MsgList.lh_Head, sizeof(struct Node));
-	}
-	return port->mp_MsgList.lh_Head->ln_Succ != NULL;
+	return port->mp_MsgList.lh_TailPred != (struct Node *)&port->mp_MsgList;
+}
+
+/* A message's fields as the PPC may read them: on WarpOS a copy the 68k makes
+ * (CopyMem runs there, it sees both memories; see port_has_messages), else
+ * the message itself. */
+static struct IntuiMessage *msg_fields(struct IntuiMessage *msg, struct IntuiMessage *copy)
+{
+#if defined(CTP2_AMIGA_WOS)
+	amiga_cache_flush(copy, sizeof(*copy));
+	CopyMem(msg, copy, sizeof(*copy));
+	amiga_cache_flush(copy, sizeof(*copy));
+	return copy;
+#else
+	(void)copy;
+	return msg;
+#endif
+}
+
+/* The word a dead key's IAddress points to (in input.device's memory: on
+ * WarpOS read by the 68k, as above). */
+static APTR dead_key_address(struct IntuiMessage *msg)
+{
+	APTR addr = NULL;
+
+	if (!msg->IAddress) return NULL;
+#if defined(CTP2_AMIGA_WOS)
+	amiga_cache_flush(&addr, sizeof(addr));
+	CopyMem(msg->IAddress, &addr, sizeof(addr));
+	amiga_cache_flush(&addr, sizeof(addr));
+#else
+	addr = *(APTR *)msg->IAddress;
+#endif
+	return addr;
 }
 
 static char key_char(struct IntuiMessage *msg)
@@ -76,7 +110,7 @@ static char key_char(struct IntuiMessage *msg)
 	ie.ie_Class        = IECLASS_RAWKEY;
 	ie.ie_Code         = msg->Code & ~IECODE_UP_PREFIX;
 	ie.ie_Qualifier    = msg->Qualifier;
-	ie.ie_EventAddress = msg->IAddress ? *(APTR *)msg->IAddress : NULL; /* dead keys */
+	ie.ie_EventAddress = dead_key_address(msg); /* dead keys */
 
 	n = MapRawKey(&ie, (STRPTR)buf, sizeof(buf), NULL);
 	return (n == 1) ? buf[0] : 0;
@@ -85,15 +119,17 @@ static char key_char(struct IntuiMessage *msg)
 static void drain(void)
 {
 	struct Window *       window = amiga_video_window();
-	struct IntuiMessage * msg;
+	struct IntuiMessage * got;
+	struct IntuiMessage   copy;
 	int                   ox, oy;
 
 	if (!window || !port_has_messages(window->UserPort)) return;
 
 	amiga_video_offset(&ox, &oy);
 
-	while ((msg = (struct IntuiMessage *)GetMsg(window->UserPort)) != NULL)
+	while ((got = (struct IntuiMessage *)GetMsg(window->UserPort)) != NULL)
 	{
+		struct IntuiMessage * const msg = msg_fields(got, &copy);
 		AmigaEvent ev;
 		memset(&ev, 0, sizeof(ev));
 		ev.time_ms   = amiga_ticks_ms();
@@ -166,7 +202,7 @@ static void drain(void)
 			break;
 		}
 
-		ReplyMsg((struct Message *)msg);
+		ReplyMsg((struct Message *)got);
 	}
 }
 
