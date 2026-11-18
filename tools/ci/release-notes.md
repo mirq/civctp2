@@ -11,6 +11,10 @@ Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS), MorphOS and ARO
 | CTP2-Linux-x86_64-@VERSION@.tar.gz | Linux (SDL2) build |
 | SHA256SUMS.txt | Checksums |
 
+## New in 0.7
+
+- **AI turns faster again, the same AI.** A route search now checks once per search, not for every map cell, whether the moving army is a civilian one and how it measures up against armies next to its path. On a real A4000 (68060), a late-game round (turn 191, six computer players, enemy moves not shown) takes 126.5 s, against 133.7 s in 0.6 and 144.1 s in 0.5. The computer players still make exactly the same moves (checked save against save).
+
 ## New in 0.6
 
 - **AI turns faster again, the same AI.** The route finding's commonest steps are cheaper (the next map cell is worked out in place instead of by a call, and what a search's remembered answers depend on is checked once per search), and each empire's centre is worked out again only when the terrain its routes cross changes, not whenever a road is finished anywhere. A late-game round (turn 191, six computer players, 68060 at 50 MHz, enemy moves not shown) takes 107 s, against 117 s in 0.5 and 251 s before 0.4. The computer players still make exactly the same moves (checked save against save).
