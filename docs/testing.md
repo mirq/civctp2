@@ -47,6 +47,16 @@ DISPLAY=:7 import -window root shot.png      # screenshot
   did not start the program.
 - MCP calls longer than 300 s are aborted, so run long jobs in the background
   and poll.
+- The bridge does not answer while the game loads a save (a minute or more):
+  wait, do not reboot. `list` the result files to follow a script; the log
+  read while the game writes it lags behind.
+- The A4000's `MakeDir` has no `ALL`/`QUIET`: it makes directories of those
+  names, and once they exist the line fails and the script stops (a script
+  stops at the first failing line).
+- Read the A4000's results after a batch, not during one: transfers over the
+  bridge slow the game down.
+- The game's timings use the E-clock (`ReadEClock`); the A4000's DOS clock
+  lost ~5 minutes in an hour of AI rounds.
 - `amiga_reboot` is fine; the bridge comes back after ~40 s. After a reboot
   the pointer sits at (0,0) and the map edge-scrolls until the mouse is
   moved.

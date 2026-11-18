@@ -107,7 +107,7 @@ path searches 65 % (`RobotAstar2::RecalcEntryCost` 52 s of it before the
 transport caches: `IsNextToForeigner` 19 s, cargo unload tests 18 s), the
 AI's goal logic itself 4 %, map redraw at the end of the round 12 %. No
 68060-trapping instruction in the game's code; FPU instructions ~2 % of
-the samples, math library calls 0.03 %. Round time: 251 s (original) →
+the samples, math library calls 0.03 %. Round time (Amiberry): 251 s (original) →
 190 s (caches) → 173 s (`-O3`) → 150 s (transport caches, inlining) → 125.5 s (A* skips steps that cannot help) → 118.0 s (radar render deferred) → ~107 s (inline neighbour step, cheaper cache index) → ~105 s (danger test per search). With the
 profile's `EnemyMoves=Yes` the same round takes ~230 s: ~105 s of it are the
 enemy units' moves shown one after another, 29 centrings ~12 s. With
@@ -115,6 +115,25 @@ enemy units' moves shown one after another, 29 centrings ~12 s. With
 sees it (`AutoCenter=Yes`): ~8 s of the round; `AutoCenter=No` took it from
 105 to 93.5 s (the AI's moves the same; 4 bytes of the quick-save differ, one
 flag in 4 records of one kind).
+
+The same rounds on the A4000 itself (2026-11-18, `EnemyMoves=No`, the
+A4000's own profile; two or three runs each, within 1 s of each other):
+
+| build | turn 191, 1 round | path searches | turn 101, 5 rounds |
+|---|---|---|---|
+| release 0.5 (`0a7f67290`) | 144.1 / 145.0 s | 57.4 s | 119.8 s |
+| `d7eab732f` (neighbour step, cache index) | 133.8 / 133.6 s | 47.9 s | – |
+| `98b9ebd6d` (danger test per search) | 126.4 / 126.5 / 126.5 s | 40.0 s | 115.9 / 116.3 s |
+| `98b9ebd6d`, `CTP2_AICACHE 0` | 210.5 s | 95.8 s | 140.0 s |
+
+The A4000 is ~20 % slower than Amiberry over the round: the path searches
+take the same time (40.0 s against 40.6 s, the same 1047 searches and
+196 227 nodes), the scheduler, `AiBeginTurn` and the map work ~25 % longer.
+The gains are larger there: −18 s a round from release 0.5 (Amiberry −11 s).
+Every turn-191 quick-save is the same game as release 0.5's; the turn-101
+ones differ only in the known uninitialised bytes. A first release-0.5
+turn-101 run took 174.6 s (its loading 2 min longer) and did not repeat; file
+transfers from the A4000 overlapped it.
 
 AI turns on a saved game (Amiberry, 2026-11-17, turn-101 test game, 6 AI
 players, `CTP2_AUTORND 5`, see [testing.md](testing.md)): 75.1 s for 5
