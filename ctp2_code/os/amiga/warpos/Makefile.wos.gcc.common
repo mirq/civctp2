@@ -28,7 +28,13 @@ WOS_CPPFLAGS = -nostdinc \
                -isystem $(WOS_SDK_ROOT)/netinclude \
                -isystem $(WOS_SDK_ROOT)/gcc-include
 
-WOS_ARCH_CFLAGS = -mcpu=$(CPU) -mcall-sysv -mbig-endian -mmultiple \
+# -maix-struct-return: the SDK's libraries (libstdc++, newlib; GCC/MorphOS
+# 9.2.0) return structs through a hidden pointer, also the small ones that
+# this compiler's SysV default returns in r3/r4 (std::pair<bool,size_t> from
+# _Prime_rehash_policy::_M_need_rehash read its `this` from r4 = the bucket
+# count: a fault at address 5 on a Sonnet card, silent garbage where page 0 is
+# mapped).
+WOS_ARCH_CFLAGS = -mcpu=$(CPU) -mcall-sysv -maix-struct-return -mbig-endian -mmultiple \
                   -fno-pic -fno-pie -fno-stack-protector \
                   -fno-asynchronous-unwind-tables -fno-unwind-tables \
                   -fno-jump-tables
