@@ -937,7 +937,13 @@ bool World::IsNextToForeigner(const MapPoint &pos, PLAYER_INDEX owner) const
 		{
 			Cell * cell = g_theWorld->GetCell(next);
 
+#if defined(CTP2_AMIGA_BUILD)
+			// Cell::GetNumUnits, inline.
+			CellUnitList * units = cell->UnitArmy();
+			if(units && units->Num() > 0
+#else
 			if(cell->GetNumUnits() > 0
+#endif
 			&& cell->UnitArmy()->GetOwner() != owner
 			&& cell->UnitArmy()->CanAttackOrBombard())
 			{

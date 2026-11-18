@@ -76,6 +76,7 @@ less than about a quarter of the compared pixels changed. See
 | `aui_DirtyList::Minimize` on an array, pairs that cannot merge passed over without the `Rectangle_SmartConsolidate` call (the same merges in the same order: 200,000 random lists compared on the host) | window lists of ~360 rectangles while units move on screen; ~12 s of CPU in a turn-191 round with `EnemyMoves=Yes`, but the round is not shorter: moves are paced (`10 - UnitSpeed` steps of 75 ms each), the frames just get cheaper |
 | path searches: the usual neighbour step inline for the danger and foreign-army tests too (`world_Neighbour`, `World.h`); what the kept per-cell answers depend on compared once per search, not per cell (`RobotAstar2::KeptIndex`) | turn 191: 116.0 → 106.7 s (two runs each, within 1 s), path searches 52.5 → 43.9 s; measured first: only 6 % of a search's entry costs are asked twice, and keeping the danger answers across searches would save 3 % of them, so no more caching there |
 | empire centres kept while the cells their searches read keep their move costs (`CityAstar::CostReads`), not only while no move cost changed anywhere | turn 101, 5 rounds: `AiBeginMapAnalysis` 3.0 → 0.8 s; turn 191: 6.0 → 5.6 s (the read cells change every round there) |
+| path searches' danger test: whether the searching army is civilian and where it stands asked once per search, and whether it is weaker than the army in a cell once per cell and search (`UnitAstar::IsWeakerThan`; nothing moves during a search); `Cell::UnitArmy` inline | turn 191: 108.5 → 105.1 s (A/B, two runs each: 110.2 → 104.9 s), path searches 44.2 → 40.6 s; with `CTP2_AICACHE 0` 207 → 186 s. Inlining `OrthogonalPoint`'s steps for the map iterators was measured too: no change, not kept |
 
 ## Current figures (A4000, 2026-11-13)
 
@@ -107,9 +108,13 @@ transport caches: `IsNextToForeigner` 19 s, cargo unload tests 18 s), the
 AI's goal logic itself 4 %, map redraw at the end of the round 12 %. No
 68060-trapping instruction in the game's code; FPU instructions ~2 % of
 the samples, math library calls 0.03 %. Round time: 251 s (original) →
-190 s (caches) → 173 s (`-O3`) → 150 s (transport caches, inlining) → 125.5 s (A* skips steps that cannot help) → 118.0 s (radar render deferred) → ~107 s (inline neighbour step, cheaper cache index). With the
+190 s (caches) → 173 s (`-O3`) → 150 s (transport caches, inlining) → 125.5 s (A* skips steps that cannot help) → 118.0 s (radar render deferred) → ~107 s (inline neighbour step, cheaper cache index) → ~105 s (danger test per search). With the
 profile's `EnemyMoves=Yes` the same round takes ~230 s: ~105 s of it are the
-enemy units' moves shown one after another, 29 centrings ~12 s.
+enemy units' moves shown one after another, 29 centrings ~12 s. With
+`EnemyMoves=No` the view still centres on what the AI does where the player
+sees it (`AutoCenter=Yes`): ~8 s of the round; `AutoCenter=No` took it from
+105 to 93.5 s (the AI's moves the same; 4 bytes of the quick-save differ, one
+flag in 4 records of one kind).
 
 AI turns on a saved game (Amiberry, 2026-11-17, turn-101 test game, 6 AI
 players, `CTP2_AUTORND 5`, see [testing.md](testing.md)): 75.1 s for 5

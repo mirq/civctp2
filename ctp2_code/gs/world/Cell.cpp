@@ -855,10 +855,12 @@ void Cell::GetArmy(CellUnitList &al)
 		al.Clear();
 }
 
+#if !defined(CTP2_AMIGA_BUILD)   // Amiga builds: inline in Cell.h
 CellUnitList * Cell::UnitArmy() const
 {
 	return m_unit_army;
 }
+#endif
 
 Unit &Cell::AccessUnit(sint32 index)
 {

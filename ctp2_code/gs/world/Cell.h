@@ -268,7 +268,12 @@ public:
 	sint32 GetNumUnits() const;
 	sint32 GetNumFortifiedUnits() const;
 	void GetArmy(CellUnitList &al);
+#if defined(CTP2_AMIGA_BUILD)
+	// Amiga builds: inline, the path searches ask it for every cell.
+	CellUnitList * UnitArmy() const { return m_unit_army; }
+#else
 	CellUnitList * UnitArmy() const;
+#endif
 	Unit &AccessUnit(sint32 index);
 
 	bool HasRiver() const { return (m_env & k_MASK_ENV_RIV_CUR) != 0; }

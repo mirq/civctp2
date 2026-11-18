@@ -38,11 +38,16 @@
 //   its way the goal should be reconsidered. - Feb. 21st 2005 Martin Gühmann
 // - Updated for wrap correction.
 // - Made Government modified for units work here. (July 29th 2006 Martin Gühmann)
+// - Amiga builds: CheckIsDangerForPos asks the searching army once per
+//   search, and compares strengths once per cell and search (IsWeakerThan).
 //
 //----------------------------------------------------------------------------
 
 #include "c3.h"
 #include "UnitAstar.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include <algorithm>          // std::fill
+#endif
 #include "World.h"
 
 #include "Path.h"
@@ -78,6 +83,15 @@ namespace
 }
 
 UnitAstar::UnitAstar()
+#if defined(CTP2_AMIGA_BUILD)
+:
+	m_dangerArmyKnown    (false),
+	m_dangerArmyCivilian (false),
+	m_dangerArmyPos      (),
+	m_weakerGen          (0),
+	m_weakerStamp        (),
+	m_weaker             ()
+#endif
 {
 	ClearMem();
 }
@@ -1190,6 +1204,16 @@ bool UnitAstar::FindPath(
 	m_no_bad_path         = no_bad_path;
 	m_ignore_zoc          = ((m_army.m_id != 0) && m_army.IsIgnoresZOC());
 
+#if defined(CTP2_AMIGA_BUILD)
+	// A new army (or the same one elsewhere): CheckIsDangerForPos asks again.
+	m_dangerArmyKnown     = false;
+	if (++m_weakerGen == 0)
+	{
+		std::fill(m_weakerStamp.begin(), m_weakerStamp.end(), 0);
+		m_weakerGen = 1;
+	}
+#endif
+
 	InitSearch(start, owner, dest, good_path, is_broken_path, bad_path);
 	Assert(VerifyMem());
 
@@ -1279,13 +1303,54 @@ bool UnitAstar::VerifyMem() const
 	return true;
 }
 
+#if defined(CTP2_AMIGA_BUILD)
+// !m_army_strength.HasEnough(Squad_Strength(pos)), once per cell and search.
+bool UnitAstar::IsWeakerThan(const MapPoint & pos)
+{
+	size_t const width = static_cast<size_t>(g_theWorld->GetXWidth());
+	size_t const cells = width * static_cast<size_t>(g_theWorld->GetYHeight());
+	if (m_weakerStamp.size() != cells)
+	{
+		m_weakerStamp.assign(cells, 0);
+		m_weaker.assign(cells, 0);
+	}
+
+	size_t const index = static_cast<size_t>(pos.y) * width + static_cast<size_t>(pos.x);
+	if (index >= cells)
+	{
+		return !m_army_strength.HasEnough(Squad_Strength(pos));
+	}
+
+	if (m_weakerStamp[index] != m_weakerGen)
+	{
+		m_weaker[index]      = m_army_strength.HasEnough(Squad_Strength(pos)) ? 0 : 1;
+		m_weakerStamp[index] = m_weakerGen;
+	}
+
+	return m_weaker[index] != 0;
+}
+#endif
+
 bool UnitAstar::CheckIsDangerForPos(const MapPoint & pos)
 {
 	Diplomat & diplomat = Diplomat::GetDiplomat(m_owner);
+#if defined(CTP2_AMIGA_BUILD)
+	if (!m_dangerArmyKnown)
+	{
+		m_dangerArmyCivilian = m_army->IsCivilian();
+		m_dangerArmyPos      = m_army->RetPos();
+		m_dangerArmyKnown    = true;
+	}
+	const bool isCivilian = m_dangerArmyCivilian;
+
+	MapPoint neighbor;
+	MapPoint const & start = m_dangerArmyPos;
+#else
 	const bool isCivilian = m_army->IsCivilian();
 
 	MapPoint neighbor;
 	MapPoint start = m_army->RetPos();
+#endif
 
 	for(sint32 i = 0; i <= SOUTH; i++)
 	{
@@ -1301,7 +1366,11 @@ bool UnitAstar::CheckIsDangerForPos(const MapPoint & pos)
 		}
 
 		//Check for hostile army
+#if defined(CTP2_AMIGA_BUILD)
+		CellUnitList * the_army = g_theWorld->GetCell(neighbor)->UnitArmy();   // GetArmyPtr, inline
+#else
 		CellUnitList * the_army = g_theWorld->GetArmyPtr(neighbor);
+#endif
 
 		if (the_army && the_army->CanAttackOrBombard())
 		{
@@ -1313,7 +1382,11 @@ bool UnitAstar::CheckIsDangerForPos(const MapPoint & pos)
 				sint32 turnsatwar = AgreementMatrix::s_agreements.TurnsAtWar(m_owner, owner);
 				if (baseRegard <= NEUTRAL_REGARD || turnsatwar >= 0)
 				{
+#if defined(CTP2_AMIGA_BUILD)
+					if((isCivilian && isVisible) || (isVisible && IsWeakerThan(neighbor)) || the_army->CanBombardTargetType(*m_army.GetData()))
+#else
 					if((isCivilian && isVisible) || (!m_army_strength.HasEnough(Squad_Strength(neighbor)) && isVisible) || the_army->CanBombardTargetType(*m_army.GetData()))
+#endif
 					{
 						return true;
 					}

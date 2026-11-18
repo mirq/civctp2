@@ -39,6 +39,9 @@
 #include "Astar.h"
 #include "Army.h"
 #include "squad_Strength.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include <vector>
+#endif
 
 class Cell;
 class CityData;
@@ -63,6 +66,9 @@ protected:
 			const bool       & check_dest);
 
 	bool CheckIsDangerForPos(const MapPoint & pos);
+#if defined(CTP2_AMIGA_BUILD)
+	bool IsWeakerThan(const MapPoint & pos);
+#endif
 	void InitArmy(const Army & army, sint32 & nUnits, uint32 & move_intersection, uint32 & move_union,
 				float & army_minmax_move);
 
@@ -82,6 +88,20 @@ protected:
 	// destination does not need to be literally enterable" case that
 	// UnitAstar::EntryCost itself already special-cases.
 	bool GetCheckDest() const { return m_check_dest; }
+
+#if defined(CTP2_AMIGA_BUILD)
+	// Amiga builds: what CheckIsDangerForPos asks of the searching army -
+	// whether it is civilian, where it stands - found once per search
+	// (FindPath), and per cell whether this army is weaker than the army
+	// there (m_army_strength.HasEnough): nothing moves during a search, and
+	// one army is next to up to eight cells the search tests.
+	bool                m_dangerArmyKnown;
+	bool                m_dangerArmyCivilian;
+	MapPoint            m_dangerArmyPos;
+	uint32              m_weakerGen;
+	std::vector<uint32> m_weakerStamp;   // == m_weakerGen: m_weaker is known
+	std::vector<uint8>  m_weaker;
+#endif
 
 public:
 	UnitAstar();
