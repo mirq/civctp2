@@ -56,6 +56,7 @@ class HappyTimer;
 
 #include "HappyTracker.h"   // HAPPY_REASON, HappyTracker
 #include "player.h"         // PLAYER_INDEX, Player
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 class CityData;
 class CivArchive;
@@ -84,6 +85,7 @@ public:
 	void Serialize(CivArchive &archive);
 };
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 class Happy
 	{
 	private:
@@ -214,6 +216,7 @@ class Happy
 		HappyTracker *GetHappyTracker() { return m_tracker; }
 		void Copy(Happy *copy);
 	};
+SAVE_LAYOUT_END
 
 uint32 Happy_Happy_GetVersion(void);
 

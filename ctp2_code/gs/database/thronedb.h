@@ -5,10 +5,12 @@
 #define _BMH_THRONE_DB_H_
 
 #include "dbtypes.h"
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 class CivArchive;
 class Token;
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 struct ThroneInfo {
 
 	StringId		m_name;
@@ -25,6 +27,7 @@ struct ThroneInfo {
 
 	bool			m_isCeiling;
 };
+SAVE_LAYOUT_END
 
 class ThroneDB {
 public:

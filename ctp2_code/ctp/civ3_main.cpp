@@ -186,6 +186,7 @@
 #endif
 #if defined(__AUI_USE_AMIGA__)
 #include "amiga_platform.h"
+#include "SaveLayout.h"                 // g_saveLayoutOldPpc: "oldsave"
 #include "ScienceManagementDialog.h"    // CTP2_BENCH=win
 #include "NationalManagementDialog.h"
 #include "DomesticManagementDialog.h"
@@ -1069,6 +1070,44 @@ static bool AmigaReloadTick(void)
 	return true;    // the rounds wait for the reload
 }
 
+// "oldsave -l<save file>": a save of an older WarpOS/MorphOS build (the
+// PowerPC layout of SaveLayout.h's classes) is loaded with the conversion,
+// written again as <save file>-68k (the format of every Amiga build now) and
+// the game quits. The converted file loads like any other save.
+extern BOOL g_cmdline_load;              // below: the -l argument
+extern char g_cmdline_load_filename[160];
+static void AmigaConvertTick(void)
+{
+	static int    s_state = 0;      // 0: loading, 1: settling, 2: done
+	static uint32 s_mark  = 0;
+
+	if (s_state == 2 || !g_cmdline_load) return;
+	if (s_state == 0)
+	{
+		if (!g_saveLayoutOldPpc) { s_state = 2; return; }
+		if (g_civApp && g_civApp->IsGameLoaded() && g_tiledMap && g_selected_item
+		&&  g_selected_item->GetCurPlayer() == g_selected_item->GetVisiblePlayer()
+		&& !g_gevManager->EventsPending())
+		{
+			s_mark  = GetTickCount();
+			s_state = 1;
+		}
+		return;
+	}
+	if (GetTickCount() - s_mark < 2000) return;
+
+	g_saveLayoutOldPpc = false;     // the next load is an ordinary one
+
+	MBCHAR path[_MAX_PATH];
+	snprintf(path, sizeof(path), "%s-68k", g_cmdline_load_filename);
+	uint32 const r = GameFile().Save(path, NULL);
+	gamefile_AmigaSaveFlush();
+	amiga_log("Convert: %s written (%lu), quitting\n", path, (unsigned long)r);
+	printf("Call to Power II: the old save %s is converted to %s\n", g_cmdline_load_filename, path);
+	gDone   = TRUE;
+	s_state = 2;
+}
+
 static void AmigaAutoRndTick(void)
 {
 	static sint32 s_rounds = -2;    // -2: not asked yet, -1: off
@@ -1726,6 +1765,11 @@ void ParseCommandLine(PSTR szCmdLine)
 	g_noAssertDialogs = (NULL != strstr(szCmdLine, "noassertdialogs"));
 	g_runInBackground = (NULL != strstr(szCmdLine, "runinbackground"));
 	g_runSpriteEditor = (NULL != strstr(szCmdLine, "runspriteeditor"));
+#if defined(__AUI_USE_AMIGA__)
+	// "oldsave": the -l save is one of an older WarpOS/MorphOS build; it is
+	// converted (SaveLayout.h) and written again, see AmigaConvertTick.
+	g_saveLayoutOldPpc = g_cmdline_load && (NULL != strstr(szCmdLine, "oldsave"));
+#endif
 
 #if defined(__AUI_USE_SDL__)
 	if (strstr(szCmdLine, "hwsurface")) {
@@ -2628,6 +2672,7 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 
 		if (s_bench.on < 0) s_bench.on = amiga_env_flag("CTP2_BENCH") ? 1 : 0;
 		if (s_bench.on) AmigaBenchTick();
+		AmigaConvertTick();
 		AmigaAutoRndTick();
 
 		// The sound ring, ahead of the player.

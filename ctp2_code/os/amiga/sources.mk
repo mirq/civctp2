@@ -12,6 +12,7 @@ AMIGA_SRCS_CTP := \
 	ctp/ctp2_utils/c3errors.cpp \
 	ctp/ctp2_utils/c3files.cpp \
 	ctp/ctp2_utils/c3mem.cpp \
+	ctp/ctp2_utils/SaveLayout.cpp \
 	ctp/ctp2_utils/cheatkey.cpp \
 	ctp/ctp2_utils/ctpregistry.cpp \
 	ctp/ctp2_utils/netconsole.cpp \

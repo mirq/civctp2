@@ -255,6 +255,10 @@ void PlayerHappiness::Serialize (CivArchive &archive)
     if (archive.IsStoring()) {
 		archive.Store((uint8 *)this, sizeof(PlayerHappiness)) ;
     } else {
+#if defined(CTP2_AMIGA_BUILD)
+		SAVE_LAYOUT_LOAD(archive, this, sizeof(PlayerHappiness), PlayerHappiness);   // SaveLayout.h: older PowerPC saves too
+#else
 		archive.Load((uint8 *)this, sizeof(PlayerHappiness)) ;
+#endif
     }
 }

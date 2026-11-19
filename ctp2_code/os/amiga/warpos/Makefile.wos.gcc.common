@@ -33,7 +33,10 @@ WOS_CPPFLAGS = -nostdinc \
 # this compiler's SysV default returns in r3/r4 (std::pair<bool,size_t> from
 # _Prime_rehash_policy::_M_need_rehash read its `this` from r4 = the bucket
 # count: a fault at address 5 on a Sonnet card, silent garbage where page 0 is
-# mapped).
+# mapped). newlib's div() takes its result pointer in r3 too. The linker warns
+# that some libstdc++ objects "use r3/r4 for small structure returns": their
+# ELF attribute says so, their code does not (MorphOS GCC returns them in
+# memory either way).
 WOS_ARCH_CFLAGS = -mcpu=$(CPU) -mcall-sysv -maix-struct-return -mbig-endian -mmultiple \
                   -fno-pic -fno-pie -fno-stack-protector \
                   -fno-asynchronous-unwind-tables -fno-unwind-tables \

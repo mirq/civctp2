@@ -137,12 +137,14 @@ $(LIBSTDCXX_UNGROUPED): $(WOS_SDK_ROOT)/lib/libstdc++.a
 # keeps its debug information beside the objects for addr2line; the converter
 # gets it without (and never without symbols). --wrap=fopen: every fopen goes
 # through os/amiga/amiga_posix.c, which makes the name an AmigaDOS one (c3.h's
-# fopen macro is undone by <cstdio>).
+# fopen macro is undone by <cstdio>). --wrap=exit: every exit() is logged with
+# its code and caller first (os/amiga/amiga_platform.c), as the game has ~30 of
+# them that say nothing.
 DEBUG_ELF := $(OBJDIR)/ctp2.debug.elf
 
 $(DEBUG_ELF): $(WOS_OBJECTS) $(LIBSTDCXX_UNGROUPED) $(WOS_ETREL_LDSCRIPT)
 	@echo "  LD  $@"
-	@$(LD) $(WOS_LINK_FLAGS) --wrap=fopen $(WOS_LIBRARY_DIRS) -o $@ \
+	@$(LD) $(WOS_LINK_FLAGS) --wrap=fopen --wrap=exit --wrap=abort --wrap=__cxa_throw $(WOS_LIBRARY_DIRS) -o $@ \
 		$(WOS_STARTFILE) $(WOS_OBJECTS) $(LIBSTDCXX_UNGROUPED) $(WOS_RUNTIME_LIBS) $(WOS_ENDFILE)
 
 $(ELF): $(DEBUG_ELF)

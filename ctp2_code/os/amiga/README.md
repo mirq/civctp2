@@ -217,6 +217,9 @@ game, turns, quit back to the Shell.
 - Not run on hardware yet (none of the three builds).
 - Save games store some objects as raw memory: Amiga saves load on the Amiga,
   not on a PC, and the reverse. Scenarios that ship as save games will not load.
+  The 68060, WarpOS and MorphOS builds share one format (`SaveLayout.h` gives
+  the PowerPC builds the 68k layout of those classes), so a save from one loads
+  on the others; WarpOS/MorphOS saves made before that do not load any more.
 - No movies, no music, no multiplayer, no TIFF images (only for modding).
 - The sprite editor writes sprites in the machine's byte order; the tile set's
   slow load path (`TileSet::Load*`) is not byte-order aware (the game uses the

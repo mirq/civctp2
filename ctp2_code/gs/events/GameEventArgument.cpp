@@ -87,7 +87,11 @@ void GameEventArgument::Serialize(CivArchive &archive)
 				((Path *)(m_data.m_ptr))->Serialize(archive);
 				break;
 			default:
+#if defined(CTP2_AMIGA_BUILD)
+				SAVE_LAYOUT_LOAD(archive, &m_data, sizeof(m_data), GameEventArgumentData);   // SaveLayout.h: older PowerPC saves too
+#else
 				archive.Load((uint8*)&m_data, sizeof(m_data));
+#endif
 				break;
 		}
 	}

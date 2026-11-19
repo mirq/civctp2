@@ -535,7 +535,11 @@ void Diplomat::Load(CivArchive & archive)
 	archive >> count;
 	for (i = 0; i < count; i++)
 	{
+#if defined(CTP2_AMIGA_BUILD)
+		SAVE_LAYOUT_LOAD(archive, &threat, sizeof(Threat), Threat);   // SaveLayout.h: older PowerPC saves too
+#else
 		archive.Load((uint8 *)&threat, sizeof(Threat));
+#endif
 		m_threats.push_back(threat);
 	}
 

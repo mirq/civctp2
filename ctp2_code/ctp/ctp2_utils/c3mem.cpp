@@ -1,6 +1,9 @@
 #include "c3.h"
 #include "debugmemory.h"
 #include "c3debug.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_log: a failed allocation
+#endif
 
 sint32 g_check_mem;
 
@@ -25,6 +28,11 @@ void* operator new(const size_t size)
 #endif
 #else
 		DPRINTF(k_DBG_FIX, ("AI: Failed to allocate block of size %ld\n", size));
+#endif
+#if defined(CTP2_AMIGA_BUILD)
+		amiga_log("operator new: %lu bytes failed, %lu bytes of fast memory free, from amiga_log%+ld\n",
+		          (unsigned long)size, amiga_avail_fast(),
+		          (long)((uintptr_t)__builtin_return_address(0) - (uintptr_t)&amiga_log));
 #endif
 		exit(-1);
 	}

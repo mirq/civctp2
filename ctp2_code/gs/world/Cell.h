@@ -127,6 +127,7 @@ class MapPoint;
 #include "gstypes.h"    // TERRAIN_TYPES
 #include "player.h"     // PLAYER_INDEX
 #include "Unit.h"
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 #define INVALID_CONTINENT -2
 #define SEARCHING_CONTINENT -1
@@ -167,6 +168,7 @@ public:
 	bool IsLandContinent () const { return m_landContinentID  != INVALID_CONTINENT; }
 };
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 class Cell {
 
 private:
@@ -416,6 +418,7 @@ public:
 
 	static void RecalcPlayerLandArea();
 };
+SAVE_LAYOUT_END
 
 uint32 Cell_CELL_GetVersion(void) ;
 

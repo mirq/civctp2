@@ -741,8 +741,12 @@ void Player::Serialize(CivArchive &archive)
 	else
 	{
 		archive.TestMagic(PLAYER_MAGIC) ;
+#if defined(CTP2_AMIGA_BUILD)
+		SAVE_LAYOUT_LOAD(archive, &m_owner, ((uint8 *)&m_broken_alliances_and_cease_fires) + sizeof(m_broken_alliances_and_cease_fires) - (uint8 *)&m_owner, Player);   // SaveLayout.h: older PowerPC saves too
+#else
 		archive.LoadChunk((uint8 *)&m_owner, ((uint8 *)&m_broken_alliances_and_cease_fires)
 			+ sizeof(m_broken_alliances_and_cease_fires));
+#endif
 
 		if(g_numGoods == g_theResourceDB->NumRecords()){
 			archive.Load((uint8*)m_goodSalePrices, g_theResourceDB->NumRecords() * sizeof(sint32));

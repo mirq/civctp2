@@ -5,8 +5,10 @@
 #define __ENDGAME_RECORD_H__
 
 #include "Rec.h"
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 class Token;
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 class EndGameRecord : public Record
 {
 private:
@@ -63,5 +65,6 @@ public:
 	sint32 GetCost() const { return m_cost; }
 	sint32 RequiredToAdvanceFromStage(sint32 stage) const;
 };
+SAVE_LAYOUT_END
 
 #endif

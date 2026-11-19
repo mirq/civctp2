@@ -36,11 +36,13 @@
 class Difficulty;
 
 #include "player.h" // PLAYER_INDEX
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 class CivArchive;
 
 #define k_DIFFICULTY_VERSION_MAJOR	0
 #define k_DIFFICULTY_VERSION_MINOR	0
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 class Difficulty {
 
 	double m_big_city_scale;
@@ -116,6 +118,7 @@ public:
 	void Serialize(CivArchive &archive) ;
 
 };
+SAVE_LAYOUT_END
 
 double diffutil_GetAiAdjustment(const sint32 diff,
                                 const sint32 playerId,

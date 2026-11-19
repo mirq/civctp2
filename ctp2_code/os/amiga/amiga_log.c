@@ -18,6 +18,7 @@ static size_t   s_len;
 static uint32_t s_lastFlush;
 static int      s_started;
 static int      s_sync = -1;   /* ENV:CTP2_LOGSYNC, read at the first line */
+static long     s_copy;        /* ENV:CTP2_LOGTO's handle; 0 unread, -1 none */
 
 void amiga_log_flush(void)
 {
@@ -65,6 +66,21 @@ void amiga_log(const char *fmt, ...)
 		s_sync = (GetVar((CONST_STRPTR)"CTP2_LOGSYNC", (STRPTR)env, sizeof(env), GVF_GLOBAL_ONLY) > 0) ? 1 : 0;
 	}
 
+	/* ENV:CTP2_LOGTO: a copy of every line, at once, to a DOS path that
+	 * outlives a reset (a serial console such as the TF4060's TFCON:; files
+	 * written just before a reset do not always reach the disk). */
+	if (s_copy == 0)
+	{
+		char path[128];
+		s_copy = -1;
+		if (GetVar((CONST_STRPTR)"CTP2_LOGTO", (STRPTR)path, sizeof(path), GVF_GLOBAL_ONLY) > 0)
+		{
+			BPTR const fh = Open((CONST_STRPTR)path, MODE_NEWFILE);
+			if (fh) s_copy = (long)fh;
+		}
+	}
+	if (s_copy > 0) Write((BPTR)s_copy, line, (LONG)strlen(line));
+
 	if (s_sync || now - s_lastFlush >= LOG_PERIOD) amiga_log_flush();
 }
 
@@ -72,4 +88,9 @@ void amiga_log_exit(void)
 {
 	amiga_log("Exit\n");
 	amiga_log_flush();
+	if (s_copy > 0)
+	{
+		Close((BPTR)s_copy);
+		s_copy = -1;
+	}
 }

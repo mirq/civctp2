@@ -105,6 +105,7 @@ public:
 		void ResetForLoad(void);
 		uint8 *GetStream(void) { return (m_pbBaseMemory) ; }
 		size_t StreamLen(void) { return (m_ulLength) ; }
+		size_t Position(void) const { return (size_t)(m_pbInsert - m_pbBaseMemory) ; }
 		void DumpStream(const MBCHAR* fileName);
 
 		friend class GameFile ;

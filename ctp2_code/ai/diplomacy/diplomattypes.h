@@ -44,6 +44,7 @@
 #define __DIPLOMAT_TYPES_H__
 
 #include <string>
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 typedef sint32 PLAYER_INDEX;
 typedef sint32 StringId;
@@ -179,6 +180,7 @@ enum RESPONSE_TYPE
 
 extern std::string s_responseNames[RESPONSE_MAX];
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 struct DiplomacyResult
 {
 	DiplomacyResult()
@@ -658,5 +660,6 @@ struct NegotiationEvent
 	Threat        threat;
 	sint16        round;
 };
+SAVE_LAYOUT_END
 
 #endif // __DIPLOMAT_TYPES_H__

@@ -133,6 +133,7 @@ PLAYER_INDEX const  PLAYER_BARBARIAN    =  0;
 #include "Strengths.h"          // STRENGTH_CAT
 #include "Unit.h"               // UNIT_COMMAND
 #include "GreatLibraryTypes.h"  // DATABASE
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 template <class T> class DynamicArray;
 template <class T> class Database;
@@ -190,6 +191,7 @@ extern Player **    g_player;
 // Class declarations
 //----------------------------------------------------------------------------
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 class Player
 {
 private:
@@ -1037,5 +1039,6 @@ private:
 
 	typedef std::vector<CityDist> CityDistQueue;
 };
+SAVE_LAYOUT_END
 
 #endif

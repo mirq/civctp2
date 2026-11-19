@@ -149,6 +149,11 @@
 #include "Wormhole.h"
 #if defined(CTP2_AMIGA_BUILD)
 #include "amiga_platform.h"     // amiga_log: load step times
+// The steps of gameinit_Initialize in the log (a hang or a silent exit while
+// a saved game is restored shows its last section).
+#define GI_STEP() amiga_log("gameinit: line %d\n", __LINE__)
+#else
+#define GI_STEP() ((void)0)
 #endif
 
 extern void Astar_Init();
@@ -1433,6 +1438,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	// Removed the auto-tutorial on low difficulty, since it causes
 	// more problems than it solves - JJB
 
+	GI_STEP();
 	if (archive) {
 		g_rand = new RandomGenerator(*archive);
 	} else {
@@ -1475,6 +1481,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 
 
 
+	GI_STEP();
 	if(archive) {
 		g_theGameSettings = new GameSettings(*archive);
 	} else {
@@ -1486,6 +1493,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	bool loadEverything =
         !g_isScenario || (g_startInfoType == STARTINFOTYPE_NOLOCS);
 
+	GI_STEP();
 	if (archive) {
 		g_theWorld = new World(*archive) ;
 		if(
@@ -1548,6 +1556,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 
 	Assert(g_theWorld);
 
+	GI_STEP();
 	if (archive && loadEverything){
 		g_turn = new TurnCount(*archive);
 	} else {
@@ -1560,6 +1569,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 		}
 	}
 
+	GI_STEP();
 	if (archive && loadEverything){
 		g_selected_item = new SelectedItem(*archive);
 	}else {
@@ -1583,21 +1593,25 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	                                                 sint16(g_theWorld->GetYHeight()),
 	                                                 g_theWorld->IsYwrap());
 
+	GI_STEP();
 	if (archive && loadEverything)
 		g_theUnitPool = new UnitPool(*archive);
 	else
 		g_theUnitPool = new UnitPool();
 	Assert(g_theUnitPool);
 
+	GI_STEP();
 	if(archive && loadEverything)
 		g_theArmyPool = new ArmyPool(*archive);
 	else
 		g_theArmyPool = new ArmyPool();
 	Assert(g_theArmyPool);
 
+	GI_STEP();
 	if(archive && loadEverything)
 		g_theUnitPool->RebuildQuadTree();
 
+	GI_STEP();
 	if(archive && loadEverything) {
 		g_theTradePool = new TradePool(*archive);
 
@@ -1617,6 +1631,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 		g_theTradePool = new TradePool();
 
     // 55 is probably the last save game version for CTP1
+	GI_STEP();
 	if (archive && loadEverything && (g_saveFileVersion < 55))
     {
 		g_theTradeOfferPool = new TradeOfferPool(*archive);
@@ -1627,12 +1642,14 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
     }
 	Assert(g_theTradeOfferPool);
 
+	GI_STEP();
 	if (archive && loadEverything)
 		g_thePollution = new Pollution(*archive);
 	else
 		g_thePollution = new Pollution();
 	Assert(g_thePollution);
 
+	GI_STEP();
 	if (archive && loadEverything && (g_saveFileVersion < 55))
     {
 		g_theTopTen = new TopTen(*archive);
@@ -1645,6 +1662,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 
 	SPLASH_STRING("Initializing SLIC Engine...");
 
+	GI_STEP();
 	if (archive)
     {
         delete g_slicEngine;
@@ -1655,6 +1673,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
     {
         if (!SlicEngine::Reload(g_slic_filename))
         {
+			GI_STEP();
 			return FALSE;
 		}
 
@@ -1684,12 +1703,14 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 
 	SPLASH_STRING("Initializing Object Pools...");
 
+	GI_STEP();
 	if(archive && loadEverything)
 		g_theTerrainImprovementPool = new TerrainImprovementPool(*archive);
 	else
 		g_theTerrainImprovementPool = new TerrainImprovementPool();
 	Assert(g_theTerrainImprovementPool) ;
 
+	GI_STEP();
 	if (archive && loadEverything && (g_saveFileVersion < 55))
     {
 		g_theDiplomaticRequestPool = new DiplomaticRequestPool(*archive) ;
@@ -1700,12 +1721,14 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	}
 	Assert(g_theDiplomaticRequestPool) ;
 
+	GI_STEP();
 	if (archive && loadEverything)
 		g_theCivilisationPool = new CivilisationPool(*archive) ;
 	else
 		g_theCivilisationPool = new CivilisationPool() ;
 	Assert(g_theCivilisationPool) ;
 
+	GI_STEP();
 	if (archive && loadEverything && (g_saveFileVersion < 55))
     {
 		g_theAgreementPool = new AgreementPool(*archive) ;
@@ -1717,6 +1740,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	Assert(g_theAgreementPool) ;
 
 	delete g_theMessagePool;
+	GI_STEP();
 	if (archive && loadEverything)
 		g_theMessagePool = new MessagePool(*archive) ;
 	else
@@ -1727,6 +1751,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	g_theCriticalMessagesPrefs = new CriticalMessagesPrefs() ;
 	Assert(g_theCriticalMessagesPrefs) ;
 
+	GI_STEP();
 	if(archive && loadEverything)
 		g_theInstallationPool = new InstallationPool(*archive);
 	else
@@ -1735,6 +1760,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 
 	g_theInstallationPool->RebuildQuadTree();
 
+	GI_STEP();
 	if (archive && loadEverything && (g_saveFileVersion < 55))
     {
 		sint32 wormholeExists;
@@ -1746,12 +1772,14 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 		g_wormhole = NULL;
 	}
 
+	GI_STEP();
 	if(archive && loadEverything) {
 		g_theWonderTracker = new WonderTracker(*archive);
 	} else {
 		g_theWonderTracker = new WonderTracker();
 	}
 
+	GI_STEP();
 	if(archive && loadEverything && (g_saveFileVersion < 55))
     {
 		g_theAchievementTracker = new AchievementTracker(*archive);
@@ -1761,6 +1789,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 		g_theAchievementTracker = new AchievementTracker();
 	}
 
+	GI_STEP();
 	if (archive)
     {
 		delete g_exclusions;
@@ -1771,12 +1800,14 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	    // Exclusions not used
 	}
 
+	GI_STEP();
 	if(archive && loadEverything) {
 		g_featTracker = new FeatTracker(*archive);
 	} else {
 		g_featTracker = new FeatTracker;
 	}
 
+	GI_STEP();
 	if(archive && loadEverything && (g_saveFileVersion < 55))
     {
 		g_theTradeBids = new TradeBids(*archive);
@@ -1786,6 +1817,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 		g_theTradeBids = new TradeBids;
 	}
 
+	GI_STEP();
 	if(archive && loadEverything)
 	{
 		g_eventTracker = new EventTracker(*archive);
@@ -1807,6 +1839,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	sint32 numPlayersLoaded = 0;
 
 	sint32 i, j;
+	GI_STEP();
 	if (archive)
 	{
 		for (i = 0; i < k_MAX_PLAYERS; i++)
@@ -2117,9 +2150,11 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	bool createRobotInterface = true;
 
 	SPLASH_STRING("Initializing A-star Pathing...");
+	GI_STEP();
 	roboinit_Initalize(archive);
 	CtpAi::Cleanup();
 
+	GI_STEP();
 	if (archive && loadEverything)
 	{
 		g_theWorld->SetAllMoveCost();
@@ -2166,6 +2201,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 
 	g_theTradeOfferPool->ReRegisterOffers();
 
+	GI_STEP();
 	if (!archive)
 	{
 		sint32 numPlaced = 0;
@@ -2233,6 +2269,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 		g_director->AddCopyVision();
 	}
 
+	GI_STEP();
 	if(archive)
 	{
 		SPLASH_STRING("Set all move costs...");
@@ -2337,6 +2374,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	}
 
 	SPLASH_STRING("Reset vision...");
+	GI_STEP();
 	if(archive && loadEverything) {
 		for(i = 0; i < k_MAX_PLAYERS; i++) {
 			if(g_player[i]) {
@@ -2385,6 +2423,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 		g_scenarioUsePlayerNumber = 0;
 	}
 
+	GI_STEP();
 	if (!archive || g_isScenario)
 	{
 		if (g_startHotseatGame || g_startEmailGame)
@@ -2449,6 +2488,7 @@ sint32 gameinit_Initialize(sint32 mWidth, sint32 mHeight, CivArchive *archive)
 	delete [] g_newGoods;
 	g_newGoods = NULL;
 
+	GI_STEP();
 	return 1;
 }
 

@@ -175,7 +175,11 @@ void Happy::Serialize (CivArchive &archive)
 	}
 	else
 	{
+#if defined(CTP2_AMIGA_BUILD)
+		SAVE_LAYOUT_LOAD(archive, &m_happiness, ((uint8 *)&m_crime)+sizeof(m_crime) - (uint8 *)&m_happiness, Happy);   // SaveLayout.h: older PowerPC saves too
+#else
 		archive.LoadChunk((uint8 *)&m_happiness, ((uint8 *)&m_crime)+sizeof(m_crime));
+#endif
 
 		uint32 num;
 		archive >> num;

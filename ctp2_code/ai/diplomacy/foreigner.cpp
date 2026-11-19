@@ -143,7 +143,11 @@ void Foreigner::Load(CivArchive & archive)
 			}
 			else
 			{
+#if defined(CTP2_AMIGA_BUILD)
+				SAVE_LAYOUT_LOAD(archive, &event, sizeof(RegardEvent), RegardEvent);   // SaveLayout.h: older PowerPC saves too
+#else
 				archive.Load((uint8 *) &event, sizeof(RegardEvent));
+#endif
 				event.explainStrId = -1;
 			}
 			m_regardEventList[type].push_back(event);
@@ -157,12 +161,20 @@ void Foreigner::Load(CivArchive & archive)
 	{
 		if (g_saveFileVersion >= 60)
 		{
+#if defined(CTP2_AMIGA_BUILD)
+			SAVE_LAYOUT_LOAD(archive, &negotiation, sizeof(NegotiationEvent), NegotiationEvent);   // SaveLayout.h: older PowerPC saves too
+#else
 			archive.Load((uint8 *) &negotiation, sizeof(NegotiationEvent));
+#endif
 		}
 		else
 		{
 			OldNegotiationEvent oldnegotiation;
+#if defined(CTP2_AMIGA_BUILD)
+			SAVE_LAYOUT_LOAD(archive, &oldnegotiation, sizeof(OldNegotiationEvent), OldNegotiationEvent);   // SaveLayout.h: older PowerPC saves too
+#else
 			archive.Load((uint8 *) &oldnegotiation, sizeof(OldNegotiationEvent));
+#endif
 			negotiation.proposal = oldnegotiation.proposal;
 			negotiation.response = oldnegotiation.response;
 			negotiation.agreement = oldnegotiation.agreement;

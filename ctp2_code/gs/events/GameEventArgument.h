@@ -40,6 +40,7 @@
 #include "ID.h"
 #include "MapPoint.h"
 #include "GameEventManager.h"    // g_gevManager
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 class Unit;
 class MapPoint;
@@ -54,6 +55,7 @@ struct SimpleMapPoint // And we have to redefine it here?
 	sint16 x, y, z;
 };
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 class GameEventArgument
 {
 public:
@@ -100,5 +102,6 @@ private:
 
 	bool m_IsAlwaysValid;
 };
+SAVE_LAYOUT_END
 
 #endif

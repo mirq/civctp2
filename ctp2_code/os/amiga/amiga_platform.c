@@ -335,6 +335,38 @@ void amiga_exit_skip_destructors(void)
 		if (*d != amiga_malloc_close) *d = no_destructor_wos;
 	}
 }
+
+/* Every exit() (Makefile.warpos links with --wrap=exit): its code and where
+ * it was called from, relative to amiga_log (whose address the log's second
+ * line gives; addr2line on ctp2.debug.elf at amiga_log's address plus this).
+ * The game has ~30 exits that show nothing (archive checks, sprite files,
+ * a failed allocation). */
+void __real_exit(int code) __attribute__((noreturn));
+void __wrap_exit(int code) __attribute__((noreturn));
+void __wrap_exit(int code)
+{
+	if (s_inited)
+	{
+		long const from = (long)((uintptr_t)__builtin_return_address(0) - (uintptr_t)&amiga_log);
+		amiga_log("exit(%d) from amiga_log%+ld\n", code, from);
+		amiga_log_flush();
+	}
+	__real_exit(code);
+}
+
+/* abort() too (--wrap=abort), where an uncaught C++ exception ends. */
+void __real_abort(void) __attribute__((noreturn));
+void __wrap_abort(void) __attribute__((noreturn));
+void __wrap_abort(void)
+{
+	if (s_inited)
+	{
+		long const from = (long)((uintptr_t)__builtin_return_address(0) - (uintptr_t)&amiga_log);
+		amiga_log("abort() from amiga_log%+ld\n", from);
+		amiga_log_flush();
+	}
+	__real_abort();
+}
 #endif
 
 int      amiga_perf;

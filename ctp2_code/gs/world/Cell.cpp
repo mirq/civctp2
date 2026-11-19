@@ -154,7 +154,11 @@ void Cell::Serialize(CivArchive &archive)
 	else
 	{
 		m_playerLandArea[m_cellOwner+1]--;
+#if defined(CTP2_AMIGA_BUILD)
+		SAVE_LAYOUT_LOAD(archive, &m_env, ((uint8 *)&m_cellOwner)+sizeof(m_cellOwner) - (uint8 *)&m_env, Cell);   // SaveLayout.h: older PowerPC saves too
+#else
 		archive.LoadChunk((uint8 *)&m_env, ((uint8 *)&m_cellOwner)+sizeof(m_cellOwner));
+#endif
 		m_playerLandArea[m_cellOwner+1]++;
 #if defined(CTP2_AMIGA_BUILD)
 		++s_moveCostVersion;    // m_move_cost is in the chunk

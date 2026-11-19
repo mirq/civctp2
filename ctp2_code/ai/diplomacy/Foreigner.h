@@ -46,11 +46,13 @@ class   Foreigner;
 #include "diplomattypes.h"
 #include "DiplomacyRecord.h"
 #include "MapPoint.h"
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 
 
 
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 struct RegardEvent {
 	RegardEvent() : turn(-1), explainStrId(-1), duration(-1) {}
 	RegardEvent(const ai::Regard r,
@@ -65,6 +67,7 @@ struct RegardEvent {
 	StringId explainStrId;
 	sint16 duration;
 };
+SAVE_LAYOUT_END
 
 typedef std::list<RegardEvent> RegardEventList;
 typedef std::deque<NegotiationEvent> NegotiationEventList;

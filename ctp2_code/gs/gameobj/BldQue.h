@@ -77,11 +77,13 @@ template <class T> class PointerList;
 
 #include "player.h" // PLAYER_INDEX
 #include "Unit.h"   // Unit
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 //----------------------------------------------------------------------------
 // Class declarations
 //----------------------------------------------------------------------------
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 struct BuildNode
 {
 	sint32  m_cost;
@@ -89,6 +91,7 @@ struct BuildNode
 	sint32  m_category;
 	uint8   m_flags;
 };
+SAVE_LAYOUT_END
 
 class BuildQueue
 {

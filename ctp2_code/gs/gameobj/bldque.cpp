@@ -215,7 +215,11 @@ void BuildQueue::Serialize(CivArchive &archive)
 		for (uint32 i = 0; i < c; ++i)
 		{
 			BuildNode *node = new BuildNode;
+#if defined(CTP2_AMIGA_BUILD)
+			SAVE_LAYOUT_LOAD(archive, node, sizeof(BuildNode), BuildNode);   // SaveLayout.h: older PowerPC saves too
+#else
 			archive.Load((uint8*)node, sizeof(BuildNode));
+#endif
 			m_list->AddTail(node);
 		}
 	}

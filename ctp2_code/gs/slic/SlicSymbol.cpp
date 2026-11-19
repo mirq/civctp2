@@ -1056,7 +1056,11 @@ void SlicSymbolData::Serialize(CivArchive &archive)
 			case SLIC_SYM_ARMY:
 			case SLIC_SYM_LOCATION:
 			case SLIC_SYM_PLAYER:
+#if defined(CTP2_AMIGA_BUILD)
+				SAVE_LAYOUT_LOAD(archive, &m_val, sizeof(m_val), SlicSymbolValue);   // SaveLayout.h: older PowerPC saves too
+#else
 				archive.Load((uint8*)&m_val, sizeof(m_val));
+#endif
 				break;
 
 			case SLIC_SYM_FUNC:

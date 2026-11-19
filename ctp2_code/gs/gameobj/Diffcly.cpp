@@ -89,7 +89,11 @@ void Difficulty::Serialize(CivArchive &archive)
 	if (archive.IsStoring())
 		archive.Store((uint8 *)this, sizeof(Difficulty)) ;
 	else
+#if defined(CTP2_AMIGA_BUILD)
+		SAVE_LAYOUT_LOAD(archive, this, sizeof(Difficulty), Difficulty);   // SaveLayout.h: older PowerPC saves too
+#else
 		archive.Load((uint8 *)this, sizeof(Difficulty)) ;
+#endif
 
 }
 

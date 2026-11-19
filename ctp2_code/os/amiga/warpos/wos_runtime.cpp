@@ -64,6 +64,27 @@ void operator delete[](void * p, size_t) throw()
 	operator delete(p);
 }
 
+// Every throw (Makefile.warpos links with --wrap=__cxa_throw): with no
+// unwinder it can only end in std::terminate and abort(), so what was thrown
+// and from where goes to the log first (relative to amiga_log, as exit()).
+#include <exception>
+#include <string.h>
+#include <stdint.h>
+#include <typeinfo>
+#include "amiga_platform.h"
+
+extern "C" void __real___cxa_throw(void *, std::type_info *, void (*)(void *)) __attribute__((noreturn));
+extern "C" void __wrap___cxa_throw(void * obj, std::type_info * type, void (*dest)(void *)) __attribute__((noreturn));
+extern "C" void __wrap___cxa_throw(void * obj, std::type_info * type, void (*dest)(void *))
+{
+	long const from = (long)((uintptr_t)__builtin_return_address(0) - (uintptr_t)&amiga_log);
+	// The library throws only std::exception's kinds (functexcept.cc).
+	const char * what = type && strncmp(type->name(), "St", 2) == 0 ? static_cast<std::exception *>(obj)->what() : "";
+	amiga_log("throw %s (%s) from amiga_log%+ld\n", type ? type->name() : "?", what, from);
+	amiga_log_flush();
+	__real___cxa_throw(obj, type, dest);
+}
+
 extern "C" void __cxa_pure_virtual(void)
 {
 	fprintf(stderr, "Pure virtual function called\n");

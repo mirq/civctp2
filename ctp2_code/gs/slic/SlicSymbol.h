@@ -22,6 +22,7 @@ template <class T> class PointerList;
 class TerrainImprovement;
 
 #include "GameEventTypes.h"
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 enum SLIC_SYM_SERIAL_TYPE {
 	SLIC_SYM_SERIAL_GENERIC,
@@ -62,6 +63,7 @@ private:
 	PointerList<SlicSymbolWatchCallback> *m_watchList;
 };
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 class SlicSymbolData {
 protected:
 	SLIC_SYM m_type;
@@ -155,6 +157,7 @@ public:
 private:
    	void Init();
 };
+SAVE_LAYOUT_END
 
 SlicSymbolData *slicsymbol_Load(CivArchive &archive, SlicSymbolData *useSymbol);
 #endif

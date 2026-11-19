@@ -89,6 +89,15 @@
 #include "C3Rand.h"
 #include "IMapGen.h"
 
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_log
+// The steps of World::Serialize's load in the log, with the archive's read
+// position (a hang while a saved game is restored).
+#define W_STEP(what) amiga_log("World load: %s at %lu\n", (what), (unsigned long)archive.Position())
+#else
+#define W_STEP(what) ((void)0)
+#endif
+
 extern MapPoint g_mp_size;
 
 
@@ -2421,8 +2430,10 @@ void World::Serialize(CivArchive &archive)
 	}
     else
     {
+		W_STEP("start");
 		archive.TestMagic(WORLD_MAGIC);
 
+		W_STEP("FreeMap");
 		FreeMap();
 
 		archive >> m_isXwrap;
@@ -2433,17 +2444,24 @@ void World::Serialize(CivArchive &archive)
 
 		m_size.Serialize(archive) ;
 
+#if defined(CTP2_AMIGA_BUILD)
+		amiga_log("World load: size %ld x %ld, continents %ld/%ld\n", (long)m_size.x, (long)m_size.y,
+		          (long)m_water_continent_max, (long)m_land_continent_max);
+#endif
+		W_STEP("AllocateMap");
 		AllocateMap();
 
 		sint32 const    w   = GetWidth();
 		sint32 const    h   = GetHeight();
 		sint32 const    len = w * h;
 
+		W_STEP("tile infos");
 		for (sint32 i = 0; i < len; i++)
         {
 			m_tileInfoStorage[i].Serialize(archive);
 		}
 
+		W_STEP("cells");
 		for (sint32 x = 0; x < w; ++x)
         {
 			for (sint32 y = 0; y < h; ++y)
@@ -2454,10 +2472,15 @@ void World::Serialize(CivArchive &archive)
 			}
 		}
 
+		W_STEP("civ starts");
 		archive >> m_num_civ_starts;
 		archive.Load((uint8*)m_civ_starts, sizeof(m_civ_starts));
 
 		archive >> g_numGoods;
+#if defined(CTP2_AMIGA_BUILD)
+		amiga_log("World load: %ld goods, %ld in the database\n", (long)g_numGoods,
+		          (long)g_theResourceDB->NumRecords());
+#endif
 		if(g_numGoods == g_theResourceDB->NumRecords()){
 			m_goodValue = new double[g_numGoods];
 			archive.Load((uint8 *)m_goodValue, sizeof(double) * g_numGoods);
@@ -2469,6 +2492,7 @@ void World::Serialize(CivArchive &archive)
 			delete[] tmpGoodValue;
 			ComputeGoodsValues();
 		}
+		W_STEP("done");
 	}
 }
 

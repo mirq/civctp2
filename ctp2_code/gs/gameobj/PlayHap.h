@@ -3,6 +3,7 @@
 #endif
 #ifndef __PLAYER_HAPPINESS_H__
 #define __PLAYER_HAPPINESS_H__ 1
+#include "SaveLayout.h"     // SAVE_LAYOUT_BEGIN, SAVE_LAYOUT_END
 
 class Player;
 template <class T> class DynamicArray;
@@ -12,6 +13,7 @@ class Army;
 class CivArchive;
 class UnitDynamicArray;
 
+SAVE_LAYOUT_BEGIN   // saved as raw memory: one layout on every Amiga (SaveLayout.h)
 class PlayerHappiness {
 
     double m_workday_per_person;
@@ -67,5 +69,6 @@ public:
 
     void Serialize (CivArchive &archive);
 };
+SAVE_LAYOUT_END
 
 #endif

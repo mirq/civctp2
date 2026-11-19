@@ -99,9 +99,13 @@ void AgreementMatrix::Load(CivArchive & archive)
 
 	for (size_t i = 0; i < count; ++i)
 	{
+#if defined(CTP2_AMIGA_BUILD)
+		SAVE_LAYOUT_LOAD(archive, &(m_agreements[i]), sizeof(ai::Agreement), Agreement);   // SaveLayout.h: older PowerPC saves too
+#else
 		archive.Load(reinterpret_cast<uint8 *>(&(m_agreements[i])),
 					 sizeof(ai::Agreement)
 					);
+#endif
 	}
 }
 
