@@ -22,6 +22,27 @@ struct Library       *LocaleBase;
 struct LocaleBase    *LocaleBase;
 #endif
 
+/* libnix's scanf, strtod, atof and printf use __decimalpoint, which its
+ * startup takes from the system Locale (setlocale(LC_ALL, "")): ',' on a
+ * Polish or German Workbench. setlocale(LC_NUMERIC, "C") does not set it
+ * back, so "0.85" in the game's data read as 0 - every government
+ * coefficient was 0 and cities starved. The data files always use '.'. */
+#if defined(CTP2_AMIGA_060) || defined(CTP2_AMIGA_MOS)
+extern const char *__decimalpoint;
+#endif
+
+void amiga_c_numeric(void)
+{
+#if defined(CTP2_AMIGA_060) || defined(CTP2_AMIGA_MOS)
+	if (__decimalpoint == NULL || strcmp(__decimalpoint, ".") != 0)
+	{
+		amiga_log("Locale: decimal point '%s' from the system, '.' used\n",
+		          __decimalpoint ? __decimalpoint : "(none)");
+		__decimalpoint = ".";
+	}
+#endif
+}
+
 #if defined(CTP2_AMIGA_AROS)
 /* AROS's startup has no stack cookie: main() moves to a stack of its own
  * with NewStackSwap when the Shell's (or the icon's) is smaller than 2 MB.

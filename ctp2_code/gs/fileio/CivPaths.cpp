@@ -980,6 +980,9 @@ void CivPaths::SetLocaleFromLanguage()
 		if(strcmp(m_localizedPath, lanRec->GetDirectory()) == 0)
 		{
 			std::setlocale(LC_COLLATE, lanRec->GetIsoCode());
+#if defined(CTP2_AMIGA_BUILD)
+			amiga_c_numeric();
+#endif
 			return;
 		}
 	}

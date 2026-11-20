@@ -11,6 +11,10 @@ Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS), MorphOS and ARO
 | CTP2-Linux-x86_64-@VERSION@.tar.gz | Linux (SDL2) build |
 | SHA256SUMS.txt | Checksums |
 
+## New in 0.9
+
+- **Cities no longer starve on a Workbench set to Polish, German or another country that writes numbers with a decimal comma** (68060 and MorphOS versions). The C library took the comma from the system's Locale settings and then read the game's data, which is written with a point, wrongly: "0.85" became 0. Every government's food, production and gold factors were 0, so the city screens showed food, production and gold as 0 and the cities starved, whatever the farmers did. The game now always reads and writes numbers with a point. Until you update: set the country to United Kingdom or USA in Locale prefs, or use the WarpOS version, which was never affected. Thanks to **fazior** and **twardy** for reporting it.
+
 ## New in 0.8
 
 - **A new game no longer resets fast machines (PiStorm, Emu68)** - and no longer starts with the wrong settings anywhere. On a new install the launcher wrote a `userprofile.txt` with only the autosave setting in it; the game then took that file instead of its default settings, so the map generators were missing (a new game built its world from uninitialised memory: a reset on a PiStorm, at "Progress 440" or after F4), the computer players were off and there were three players. The launcher now starts the file from the game's defaults, and the game repairs a profile written that way by itself (its own settings for the screen size and autosave are kept). Thanks to the PiStorm users who kept reporting it.

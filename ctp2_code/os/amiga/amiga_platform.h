@@ -93,6 +93,11 @@ unsigned long amiga_avail_fast(void);
  * past the last: ENV:CTP2_LANGUAGE first, then the Locale preferences. */
 const char *amiga_preferred_language(int n);
 
+/* '.' as the C library's decimal point whatever the system Locale says
+ * (libnix takes it from there; the game's data is written with '.'). Call
+ * after every setlocale(). */
+void amiga_c_numeric(void);
+
 /* An Intuition requester; buttons separated by '|'. Returns the chosen
  * button counted from 1 for the first (Intuition's own numbering gives 0 to
  * the last button; this one does not). */

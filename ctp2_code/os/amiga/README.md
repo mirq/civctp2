@@ -145,6 +145,19 @@ the quick-load path), RIM images (`ProjectFile::getData`), TGA images
 messages (`net/io/net_util.h`), the typed values of save games
 (`civarchive.h`). Helpers: `os/include/ctp2_byteorder.h`.
 
+## Decimal point
+
+libnix (the 68060 and MorphOS builds) takes the decimal point of `strtod`,
+`atof`, `scanf` and `printf` from the system Locale at startup, and
+`setlocale(LC_NUMERIC, "C")` does not set it back. On a Polish or German
+Workbench "0.85" in the data read as 0 (all government coefficients 0, cities
+starving). `amiga_c_numeric()` (`amiga_platform.c`) puts `.` back after the
+game's `setlocale` calls; call it after any new one. `tools/fptest` shows the
+separator and checks the FPU steps of libnix's float parsing. To test, give
+the emulated Workbench a `locale.prefs` for a country with a decimal comma
+(`polska.country` is in Aminet's `misc/misc/LocalePL_OS39`; Deutschland ships
+with OS 3.x).
+
 ## MorphOS
 
 The same code as the Amiga builds, compiled natively for MorphOS's PowerPC;

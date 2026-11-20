@@ -2361,6 +2361,9 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 
 	std::setlocale(LC_COLLATE, appstrings_GetString(APPSTR_LOCALE));
 	std::setlocale(LC_NUMERIC, "C");
+#if defined(CTP2_AMIGA_BUILD)
+	amiga_c_numeric();      // libnix keeps the system Locale's ',' otherwise
+#endif
 
 #if defined(__AUI_USE_DIRECTX__)
 	if (!main_CheckDirectX()) {
