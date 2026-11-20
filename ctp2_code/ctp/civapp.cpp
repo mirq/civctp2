@@ -2406,7 +2406,11 @@ sint32 CivApp::ProcessUI(const uint32 target_milliseconds, uint32 &used_millisec
 			// Where the view was before the scroll: the map's own surface
 			// (not drawn on while the steps go to the background's) still
 			// shows it, and is shifted at the end instead of painted again.
-			RECT const viewBeforeScroll = g_tiledMap->GetMapViewRect();
+			// No map while CleanupGame runs (tile_Cleanup, then ProcessUI
+			// with the game still marked loaded): leaving a game read it
+			// through NULL - a Data Storage fault on a Sonnet's PowerPC.
+			RECT const noView = { 0, 0, 0, 0 };
+			RECT const viewBeforeScroll = g_tiledMap ? g_tiledMap->GetMapViewRect() : noView;
 #endif
 			if (!netGameLoading && ui_CheckForScroll()) {
 				do {

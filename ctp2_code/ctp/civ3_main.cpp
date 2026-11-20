@@ -2732,6 +2732,12 @@ int WINAPI CivMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 		g_letUIProcess = FALSE;
 	}
 
+#if defined(__AUI_USE_AMIGA__)
+	// Quit ends here, without DoFinalCleanup (whose ProfileDB destructor
+	// writes userprofile.txt on the other platforms): settings changed in
+	// the game would be lost.
+	if (g_theProfileDB) g_theProfileDB->Save();
+#endif
 #if defined(__AUI_USE_SDL__) || defined(__AUI_USE_AMIGA__)
 	return 0;
 #else

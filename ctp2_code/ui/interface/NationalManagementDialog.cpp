@@ -134,6 +134,10 @@ void NationalManagementDialog::Preload()
 {
 	if(!g_nationalManagementDialog) {
 		g_nationalManagementDialog = new NationalManagementDialog;
+		// The constructor adds the window to the screen (the original only
+		// built it from Open, which shows it at once): built ahead, it
+		// came up by itself, empty, while the player was idle.
+		g_nationalManagementDialog->Hide();
 	}
 }
 #endif

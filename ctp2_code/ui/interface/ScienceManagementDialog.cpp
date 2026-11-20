@@ -83,6 +83,10 @@ void ScienceManagementDialog::Preload()
 {
 	if(!g_scienceManagementDialog) {
 		g_scienceManagementDialog = new ScienceManagementDialog;
+		// The constructor adds the window to the screen (the original only
+		// built it from Open, which shows it at once): built ahead, it
+		// came up by itself, empty, while the player was idle.
+		g_scienceManagementDialog->Hide();
 	}
 }
 #endif

@@ -234,6 +234,11 @@ void LanguageScreen::ApplyLanguage()
 
 	const LanguageRecord* lanRec = g_theLanguageDB->Get(lan);
 	g_theProfileDB->SetLanguageDirectory(lanRec->GetDirectory());
+#if defined(CTP2_AMIGA_BUILD)
+	// To the disk at once, as the other option screens do: the Amiga builds
+	// leave without the cleanup whose ProfileDB destructor saves it.
+	g_theProfileDB->Save();
+#endif
 
 #if 0
 	// That would be needed to change the userinterface language without restart.
