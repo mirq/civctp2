@@ -357,6 +357,29 @@ static void update_profile(void)
 
 	game_file(path, sizeof(path), "userprofile.txt");
 	old = read_file(path, NULL);
+
+	/* No userprofile.txt yet: it starts as a copy of the game's defaults.
+	 * The game reads userprofile.txt instead of gamedata/profile.txt once
+	 * it exists, so one with only these lines lost every other setting -
+	 * the map generator plugins among them, and a new game reset the
+	 * machine (0.7, 0.8-pre). */
+	if (!old)
+	{
+		char base[300];
+		old = read_file("PROGDIR:ctp2_data/default/gamedata/profile.txt", NULL);
+		if (!old)
+		{
+			/* The launcher in the game's drawer: two levels up. */
+			strncpy(base, s_gamePath, sizeof(base) - 1);
+			base[sizeof(base) - 1] = '\0';
+			if (strlen(base) + 48 < sizeof(base))
+			{
+				strcat(base, "///ctp2_data/default/gamedata/profile.txt");
+				old = read_file(base, NULL);
+			}
+		}
+	}
+
 	out = (char *)AllocVec(65536 + 256, MEMF_ANY);
 	if (!out) { if (old) FreeVec(old); return; }
 	o = out;

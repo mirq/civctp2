@@ -80,8 +80,17 @@
 #include "soundmanager.h"       // g_soundManager
 #include "StrDB.h"              // g_theStringDB
 #include "Token.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // amiga_log
+#endif
 
 extern Diplomacy_Log *      g_theDiplomacyLog;
+
+#if defined(CTP2_AMIGA_BUILD)
+// gamedata/profile.txt's map generator plugins, for a userprofile.txt that
+// has them empty (ProfileDB::Init).
+static char s_basePlugin[k_NUM_MAP_PASSES][MAX_PATH];
+#endif
 
 namespace
 {
@@ -509,6 +518,10 @@ BOOL ProfileDB::Init(BOOL forTutorial)
 {
 	MBCHAR profileName[_MAX_PATH];
 	MBCHAR *profileTxtFile;
+#if defined(CTP2_AMIGA_BUILD)
+	MBCHAR   baseName[_MAX_PATH];
+	MBCHAR * baseFile = NULL;   // gamedata/profile.txt under a userprofile.txt
+#endif
 
 	if (forTutorial)
 	{
@@ -525,6 +538,31 @@ BOOL ProfileDB::Init(BOOL forTutorial)
 			profileTxtFile = g_civPaths->FindFile(C3DIR_GAMEDATA,
 			                                      "profile.txt", profileName);
 		}
+#if defined(CTP2_AMIGA_BUILD)
+		// gamedata/profile.txt first, the user's file over it: a
+		// userprofile.txt that lacks settings (the 0.7 launcher wrote one
+		// with AutoSave alone on a new install) left them at the defaults
+		// here, among them no map generator plugins - a new game then built
+		// its world from uninitialised memory and reset the machine.
+		else
+		{
+			baseFile = g_civPaths->FindFile(C3DIR_GAMEDATA, "profile.txt", baseName);
+			FILE * base = baseFile ? c3files_fopen(C3DIR_DIRECT, baseFile, "r") : NULL;
+			if (base)
+			{
+				(void) Parse(base);
+				fclose(base);
+				for (int pass = 0; pass < k_NUM_MAP_PASSES; ++pass)
+				{
+					strcpy(s_basePlugin[pass], m_map_plugin_name[pass]);
+				}
+			}
+			else
+			{
+				baseFile = NULL;
+			}
+		}
+#endif
 	}
 
 	if (profileTxtFile)
@@ -537,6 +575,36 @@ BOOL ProfileDB::Init(BOOL forTutorial)
 			sint32 const    saved_height    = m_screenResHeight;
 			BOOL const      res             = Parse(pro_file);
 			fclose(pro_file);
+#if defined(CTP2_AMIGA_BUILD)
+			// A profile saved by such a game holds the built-in defaults, not
+			// profile.txt's (no AI, three players, no map plugins:
+			// "MapPlugin0=" is the mark, as every profile.txt names one).
+			// profile.txt's settings again, with what the launcher sets.
+			if (baseFile && !m_map_plugin_name[0][0] && s_basePlugin[0][0])
+			{
+				BOOL const   autoSave = m_autoSave;
+				sint32 const width    = m_screenResWidth;
+				sint32 const height   = m_screenResHeight;
+				FILE * base = c3files_fopen(C3DIR_DIRECT, baseFile, "r");
+				if (base)
+				{
+					(void) Parse(base);
+					fclose(base);
+				}
+				m_autoSave        = autoSave;
+				m_screenResWidth  = width;
+				m_screenResHeight = height;
+				amiga_log("Profile: %s had the built-in defaults, %s's settings restored\n",
+				          profileTxtFile, baseFile);
+			}
+			for (int pass = 0; pass < k_NUM_MAP_PASSES; ++pass)
+			{
+				if (!m_map_plugin_name[pass][0] && s_basePlugin[pass][0])
+				{
+					strcpy(m_map_plugin_name[pass], s_basePlugin[pass]);
+				}
+			}
+#endif
 
 			if (res)
 			{

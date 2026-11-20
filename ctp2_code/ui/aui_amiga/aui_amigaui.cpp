@@ -1622,6 +1622,7 @@ BOOL aui_AmigaUI::PumpEvents(bool *pressed)
 			}
 
 			// F4 on the main menu starts a game with the last settings.
+			if (ev.code == RAW_F1 + 3) AMIGA_TRACE("F4");
 			if (ev.code == RAW_F1 + 3 && initialplayscreen_QuickStart()) break;
 
 			WPARAM const wp = SpecialKey(ev.code, ev.qualifier, ev.ch);

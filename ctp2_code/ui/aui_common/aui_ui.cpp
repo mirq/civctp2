@@ -1985,11 +1985,14 @@ BOOL aui_UI::MinimizeOnAltTabOut( BOOL minimize )
 AUI_ERRCODE aui_UI::Process( void )
 {
 #if defined(__AUI_USE_AMIGA__)
+	int const trace = amiga_trace_frames > 0 ? amiga_trace_frames-- : 0;
+	if (trace) AMIGA_TRACE("UI pass %d: idle", trace);
 	AMIGA_PERF_BEGIN(perfIdle);
 #endif
 	Idle();
 #if defined(__AUI_USE_AMIGA__)
 	AMIGA_PERF_END(perfIdle, AMIGA_PERF_UI_IDLE);
+	if (trace) AMIGA_TRACE("UI pass %d: input", trace);
 	AMIGA_PERF_BEGIN(perfMouse);
 #endif
 
@@ -1997,15 +2000,23 @@ AUI_ERRCODE aui_UI::Process( void )
 	if (m_mouse)    HandleMouseEvents();
 	if (m_keyboard) HandleKeyboardEvents();
 	if (m_joystick) HandleJoystickEvents();
+#if defined(__AUI_USE_AMIGA__)
+	if (trace) AMIGA_TRACE("UI pass %d: actions (%d)", trace, (int)m_actionList->L());
+#endif
 	HandleActions();
+#if defined(__AUI_USE_AMIGA__)
+	if (trace) AMIGA_TRACE("UI pass %d: destructive actions", trace);
+#endif
 	HandleDestructiveActions();
 #if defined(__AUI_USE_AMIGA__)
 	AMIGA_PERF_END(perfMouse, AMIGA_PERF_UI_MOUSE);
+	if (trace) AMIGA_TRACE("UI pass %d: draw (%d dirty)", trace, (int)m_dirtyList->L());
 	AMIGA_PERF_BEGIN(perfDraw);
 #endif
 	Draw();
 #if defined(__AUI_USE_AMIGA__)
 	AMIGA_PERF_END(perfDraw, AMIGA_PERF_UI_DRAW);
+	if (trace) AMIGA_TRACE("UI pass %d: done", trace);
 #endif
 
 	return AUI_ERRCODE_OK;
@@ -2016,7 +2027,13 @@ void aui_UI::HandleActions( void )
 	for ( size_t i = m_actionList->L(); i && m_actionList->L(); i-- )
 	{
 		aui_Action *action = m_actionList->RemoveHead();
+#if defined(__AUI_USE_AMIGA__)
+		AMIGA_TRACE("action %p: execute", (void *)action);
+#endif
 		action->Execute( NULL, 0, 0 );
+#if defined(__AUI_USE_AMIGA__)
+		AMIGA_TRACE("action %p: done", (void *)action);
+#endif
 		delete action;
 	}
 }

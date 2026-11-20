@@ -128,6 +128,21 @@ void amiga_log(const char *fmt, ...)
 	;
 void amiga_log_flush(void);
 
+/* ENV:CTP2_TRACE: AMIGA_TRACE lines (file:line and a note) go to the log,
+ * else they cost one test. For a machine that dies without a guru: with
+ * ENV:CTP2_LOGSYNC each line is on disk before the next step runs. */
+extern int amiga_trace_on;   /* -1 until the first AMIGA_TRACE reads ENV: */
+void amiga_trace(const char *file, int line, const char *fmt, ...)
+#ifdef __GNUC__
+	__attribute__((format(printf, 3, 4)))
+#endif
+	;
+#define AMIGA_TRACE(...) \
+	do { if (amiga_trace_on) amiga_trace(__FILE__, __LINE__, __VA_ARGS__); } while (0)
+/* UI passes still to trace phase by phase (aui_UI::Process); set where a
+ * search starts, e.g. by F4's quick start. */
+extern int amiga_trace_frames;
+
 /* ---- Video -------------------------------------------------------------- */
 
 typedef struct AmigaRect

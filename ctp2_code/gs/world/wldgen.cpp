@@ -94,8 +94,11 @@
 // The steps of World::Serialize's load in the log, with the archive's read
 // position (a hang while a saved game is restored).
 #define W_STEP(what) amiga_log("World load: %s at %lu\n", (what), (unsigned long)archive.Position())
+// The steps of a new world (ENV:CTP2_TRACE).
+#define WG_TRACE(...) AMIGA_TRACE(__VA_ARGS__)
 #else
 #define W_STEP(what) ((void)0)
+#define WG_TRACE(...) ((void)0)
 #endif
 
 extern MapPoint g_mp_size;
@@ -166,18 +169,37 @@ void World::CreateTheWorld(MapPoint player_start_list[k_MAX_PLAYERS],
 
 	do {
 
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("world %dx%d: random map (land %ld%%, continent %ld%%)", (int)m_size.x, (int)m_size.y,
+		            (long)(g_theProfileDB->PercentLand() * 100), (long)(g_theProfileDB->PercentContinent() * 100));
+#endif
 		GenerateRandMap(player_start_list);
 
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("world: move costs");
+#endif
 		SetAllMoveCost();
 
 		m_continents_are_numbered= FALSE;
 
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("world: continents");
+#endif
 		NumberContinents();
 
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("world: choke points");
+#endif
 		CalcChokePoints();
 
 		sint32 numFound;
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("world: player starts");
+#endif
 		FindPlayerStart(player_start_list, numFound, ignoreTutorialRules, player_start_score);
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("world: %ld player starts", (long)numFound);
+#endif
 
 		worldIsGood = true;
 
@@ -223,6 +245,9 @@ void World::CreateTheWorld(MapPoint player_start_list[k_MAX_PLAYERS],
 	} while(!worldIsGood);
 
 	ClearScratch();
+#if defined(CTP2_AMIGA_BUILD)
+	AMIGA_TRACE("world: done");
+#endif
 }
 
 World::World(CivArchive &archive, BOOL fromMapFile)
@@ -392,7 +417,9 @@ void World::AllocateMap()
 void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 
 {
+	WG_TRACE("map: plugin 0 (%s)", g_theProfileDB->MapPluginName(0));
 	IMapGenerator *firstPass = LoadMapPlugin(0);
+	WG_TRACE("map: plugin 0 %p", (void *)firstPass);
 	Assert(firstPass);
 	if(!firstPass) {
 		return;
@@ -407,7 +434,9 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 	sint32          whichSet    = static_cast<sint32>(g_theProfileDB->PercentContinent() * 10);
 	double *        settings    = worldutils_CreateSettings(mapRec, whichSet, numSettings);
 
+	WG_TRACE("map: height map (set %ld, %ld settings)", (long)whichSet, (long)numSettings);
 	GetHeightMap(firstPass, map, settings, numSettings);
+	WG_TRACE("map: height map done");
 	firstPass->Release();
 	FreeMapPlugin();
 	worldutils_DeleteSettings(settings);
@@ -416,7 +445,9 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 	MapDump ("logs" FILE_SEP "HeightMap.bmp", map, m_size.x, m_size.y);
 #endif
 
+	WG_TRACE("map: plugin 1 (%s)", g_theProfileDB->MapPluginName(1));
 	IMapGenerator *filterPass = LoadMapPlugin(1);
+	WG_TRACE("map: plugin 1 %p", (void *)filterPass);
 	if(filterPass) {
 
 		double pass1Settings[2] = {100.0, 5.0};
@@ -429,6 +460,7 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 		MapDump ("logs" FILE_SEP "FilterMap.bmp", map, m_size.x, m_size.y);
 #endif
 	}
+	WG_TRACE("map: filter done, histogram");
 	GetHistogram(map, histogram);
 	sint32 landPercent = sint32(g_theProfileDB->PercentLand() * 100);
 	sint32 waterPercent = 100 - landPercent;
@@ -493,7 +525,10 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 	}
 
 
+	WG_TRACE("map: levels water %ld hill %ld mountain %ld", (long)waterLevel, (long)hillLevel, (long)mountainLevel);
+	WG_TRACE("map: plugin 2 (%s)", g_theProfileDB->MapPluginName(2));
 	IMapGenerator *secondPass = LoadMapPlugin(2);
+	WG_TRACE("map: plugin 2 %p", (void *)secondPass);
 	if(!secondPass) {
 		delete [] map;
 		m_mapGenerator = MAP_GENERATOR_ORIGINAL;
@@ -506,8 +541,10 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 	sint32 *wethistogram = &wethistogramarray[128];
 
 	double homogeneity = 0.9 * g_theProfileDB->PercentHomogenous() + 0.05;
+	WG_TRACE("map: wet map (homogeneity %ld/1000)", (long)(homogeneity * 1000));
 	GetMapAndHistogram(secondPass, wetmap, wethistogram,
 					   &homogeneity, 1);
+	WG_TRACE("map: wet map done");
 
 #ifdef DUMP_TERRAIN_HEIGHT_MAPS
 	MapDump ("logs" FILE_SEP "WetMap.bmp", wetmap, m_size.x, m_size.y);
@@ -569,6 +606,7 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 			break;
 		}
 	}
+	WG_TRACE("map: levels desert %ld plains %ld grass %ld forest %ld", (long)desertLevel, (long)plainsLevel, (long)grassLevel, (long)forestLevel);
 	Assert(forestLevel != k_INVALID_LEVEL);
 	Assert(grassLevel != k_INVALID_LEVEL);
 	Assert(plainsLevel != k_INVALID_LEVEL);
@@ -604,7 +642,9 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 	secondPass->Release();
 	FreeMapPlugin();
 
+	WG_TRACE("map: plugin 3 (%s)", g_theProfileDB->MapPluginName(3));
 	IMapGenerator *thirdPass = LoadMapPlugin(3);
+	WG_TRACE("map: plugin 3 %p", (void *)thirdPass);
 	if(!thirdPass) {
 		delete [] map;
 		delete [] wetmap;
@@ -618,9 +658,12 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 	sint32 *temperatureHist = &temperatureHistArray[128];
 
 	double pass3Settings[1] = { 0.5 };
+	WG_TRACE("map: temperature map");
 	GetMapAndHistogram(thirdPass, temperatureMap, temperatureHist,
 					   &pass3Settings[0], 1);
+	WG_TRACE("map: temperature filter");
 	TemperatureFilter(temperatureMap, temperatureHist);
+	WG_TRACE("map: temperature done");
 
 #ifdef DUMP_TERRAIN_HEIGHT_MAPS
 	MapDump ("logs" FILE_SEP "TempMap.bmp", temperatureMap, m_size.x, m_size.y);
@@ -647,6 +690,7 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 		}
 	}
 
+	WG_TRACE("map: levels white %ld brown %ld", (long)whiteLevel, (long)brownLevel);
 	Assert(whiteLevel != k_INVALID_LEVEL);
 	Assert(brownLevel != k_INVALID_LEVEL);
 	Assert(whiteLevel < brownLevel);
@@ -690,7 +734,9 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 		}
 	}
 
+	WG_TRACE("map: isolated water");
 	RemoveIsolatedWater();
+	WG_TRACE("map: beaches");
 
 #define IS_SHALLOW(x) ( ((x) == TERRAIN_WATER_SHALLOW) || ((x) == TERRAIN_WATER_KELP) || ((x) == TERRAIN_WATER_REEF) )
 
@@ -737,9 +783,13 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 		}
 	}
 
+	WG_TRACE("map: rivers");
 	NewGenerateRivers(map, wetmap);
+	WG_TRACE("map: deep water");
 	GenerateDeepWater();
+	WG_TRACE("map: volcanos");
 	GenerateVolcano();
+	WG_TRACE("map: trenches");
 	GenerateTrenches();
 
 	thirdPass->Release();
@@ -749,8 +799,11 @@ void World::GenerateRandMap(MapPoint player_start_list[k_MAX_PLAYERS])
 	delete [] wetmap;
 	delete [] temperatureMap;
 
+	WG_TRACE("map: goody huts");
 	GenerateGoodyHuts();
+	WG_TRACE("map: goods");
 	GenerateGoods();
+	WG_TRACE("map: done");
 }
 
 void World::GenerateGoods()
@@ -2600,6 +2653,35 @@ IMapGenerator *World::LoadMapPlugin(sint32 pass)
 	void* plugin;
 #endif
 	const char *name = g_theProfileDB->MapPluginName(pass);
+#if defined(CTP2_AMIGA_BUILD)
+	// profile.txt's plugins, for a profile without them or with one this
+	// build does not link in (os/amiga/amiga_dl.c): without its first pass
+	// GenerateRandMap returned with the map uninitialised, and the game went
+	// on with it until the machine reset.
+	static const char * const s_defaultPlugin[k_NUM_MAP_PASSES] =
+	{
+		"dll\\map\\geometric.dll", "dll\\map\\crater.dll",
+		"dll\\map\\plasma2.dll",   "dll\\map\\plasma2.dll"
+	};
+	if (!name || !name[0])
+	{
+		amiga_log("Map generator %ld: none in the profile, %s instead\n", (long)pass, s_defaultPlugin[pass]);
+		name = s_defaultPlugin[pass];
+	}
+	else if (stricmp(name, "none") != 0)
+	{
+		char * so = strdup(name);
+		char * dot = so ? strrchr(so, '.') : NULL;
+		if (dot) strcpy(dot, ".so");
+		void * found = so ? dlopen(so, RTLD_LAZY) : NULL;
+		free(so);
+		if (!found)
+		{
+			amiga_log("Map generator %ld: %s is not in this build, %s instead\n", (long)pass, name, s_defaultPlugin[pass]);
+			name = s_defaultPlugin[pass];
+		}
+	}
+#endif
 	if(stricmp(name, "none") == 0)
 		return NULL;
 #ifndef USE_COM_REPLACEMENT

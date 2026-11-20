@@ -53,7 +53,13 @@ void ProgressWindow::BeginProgress(
 	if ( !progwin )
 	{
 		AUI_ERRCODE errcode;
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("progress window %s: building", ldlBlock);
+#endif
 		progwin = new ProgressWindow( &errcode, ldlBlock, x, y );
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("progress window: built (%d)", (int)errcode);
+#endif
 
 		progwin->m_pbar->SetMaxValue( maxval );
 
@@ -63,6 +69,9 @@ void ProgressWindow::BeginProgress(
 
 
 		g_c3ui->SetBackgroundColor( RGB(0,0,0) );
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("progress window: background set");
+#endif
 
 
 
@@ -70,6 +79,9 @@ void ProgressWindow::BeginProgress(
 
 
 		g_c3ui->AddWindow( progwin );
+#if defined(CTP2_AMIGA_BUILD)
+		AMIGA_TRACE("progress window: added");
+#endif
 	}
 	else
 	{

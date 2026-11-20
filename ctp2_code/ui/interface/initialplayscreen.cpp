@@ -63,6 +63,9 @@
 #include "screenutils.h"
 #include <string>               // std::basic_string
 #include "UIUtils.h"
+#if defined(CTP2_AMIGA_BUILD)
+#include "amiga_platform.h"     // AMIGA_TRACE
+#endif
 
 extern  C3UI				*g_c3ui;
 extern  CivApp				*g_civApp;
@@ -275,10 +278,15 @@ bool initialplayscreen_QuickStart(void)
 		return false;
 	}
 
+	AMIGA_TRACE("quick start: removing the main menu");
+	amiga_trace_frames = 50;
 	initialplayscreen_removeMyWindow(AUI_BUTTON_ACTION_EXECUTE);
+	AMIGA_TRACE("quick start: profile");
 	g_theProfileDB->SetSaveNote("");
 	g_theProfileDB->SetTutorialAdvice(FALSE);
+	AMIGA_TRACE("quick start: start game action");
 	g_civApp->PostStartGameAction();
+	AMIGA_TRACE("quick start: posted");
 	return true;
 }
 #endif

@@ -110,6 +110,10 @@ CTRL-C quits.
 | `CTP2_STEPDELAY` | WarpOS, `1`: each step of opening the screen logged, with 3 s between them (to find a freeze) |
 | `CTP2_DTORS` | `1`: the game's C++ static destructors run at exit (default: skipped; one of them, `Network::~Network`, never ended on real hardware) |
 | `CTP2_PERF` | `1`: timings of the frame's phases, the copies, scrolling, resource loads and slow game events every 3 s in `ctp2.log` |
+| `CTP2_LOGSYNC` | `1`: `ctp2.log` written line by line (default: every 2 s), for hangs and load timings |
+| `CTP2_LOGTO` | a DOS path that gets every log line at once and outlives a reset: a serial console (`TFCON:`) or the network (`TCP:<pc>/<port>`, a listener on the PC such as `nc -l <port>`). A file written just before a reset often never reaches the disk |
+| `CTP2_LOGDELAY` | ms of pause after each line sent to `CTP2_LOGTO`, so that it leaves the machine before a reset (50 on a PiStorm's wifi) |
+| `CTP2_TRACE` | `1`: trace lines (`T file:line`) for a machine that resets without a guru: the F4 quick start, the UI passes after it, each step of a new world |
 
 Pictures, fonts, sprites and sounds stay in memory once loaded (until less than 24 MB of fast memory is free), so a window opens faster the second time; 128 MB or more is assumed.
 

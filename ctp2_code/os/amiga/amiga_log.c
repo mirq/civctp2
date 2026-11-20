@@ -5,6 +5,7 @@
  */
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "amiga_os.h"
@@ -19,6 +20,7 @@ static uint32_t s_lastFlush;
 static int      s_started;
 static int      s_sync = -1;   /* ENV:CTP2_LOGSYNC, read at the first line */
 static long     s_copy;        /* ENV:CTP2_LOGTO's handle; 0 unread, -1 none */
+static int      s_delay = -1;  /* ENV:CTP2_LOGDELAY, ms; -1 unread */
 
 void amiga_log_flush(void)
 {
@@ -79,9 +81,46 @@ void amiga_log(const char *fmt, ...)
 			if (fh) s_copy = (long)fh;
 		}
 	}
-	if (s_copy > 0) Write((BPTR)s_copy, line, (LONG)strlen(line));
+	if (s_copy > 0)
+	{
+		Write((BPTR)s_copy, line, (LONG)strlen(line));
+
+		/* ENV:CTP2_LOGDELAY (ms): a pause after each copied line, so that a
+		 * line sent to TCP: leaves the machine before it can die (the
+		 * network stack holds small writes back for tens of ms). */
+		if (s_delay < 0)
+		{
+			char value[16];
+			s_delay = amiga_env_value("CTP2_LOGDELAY", value, sizeof(value)) ? atoi(value) : 0;
+			if (s_delay < 0) s_delay = 0;
+		}
+		if (s_delay > 0) amiga_delay_ms((uint32_t)s_delay);
+	}
 
 	if (s_sync || now - s_lastFlush >= LOG_PERIOD) amiga_log_flush();
+}
+
+int amiga_trace_on = -1;
+int amiga_trace_frames;
+
+void amiga_trace(const char *file, int line, const char *fmt, ...)
+{
+	char        note[384];
+	const char *base = file;
+	const char *p;
+	va_list     args;
+
+	if (amiga_trace_on < 0) amiga_trace_on = amiga_env_flag("CTP2_TRACE");
+	if (!amiga_trace_on) return;
+
+	for (p = file; *p; ++p)
+	{
+		if (*p == '/' || *p == ':') base = p + 1;
+	}
+	va_start(args, fmt);
+	vsnprintf(note, sizeof(note), fmt, args);
+	va_end(args);
+	amiga_log("T %s:%d %s\n", base, line, note);
 }
 
 void amiga_log_exit(void)

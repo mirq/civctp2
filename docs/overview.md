@@ -100,6 +100,9 @@ libnix `getenv()` does not read `ENV:`. The code uses `amiga_env_value` /
 | `CTP2_TEST` | `1`: F9 explores the whole map, for display checks |
 | `CTP2_PERF` | `1`: per-phase frame timings, copy statistics, slow events, the "Big present" callers and the cursor wait, every 3 s in `ctp2.log`; a "Center:" line per map centring (radar and map ms) |
 | `CTP2_LOGSYNC` | writes `ctp2.log` line by line, for hangs and for load-step timing |
+| `CTP2_LOGTO` | a DOS path that gets a copy of every log line at once: one that outlives a reset, such as a serial console (`TFCON:`) or the network (`TCP:<host>/<port>`, with a listener on the PC). A file written just before a reset often does not reach the disk, not even with `CTP2_LOGSYNC` |
+| `CTP2_LOGDELAY` | ms of pause after each line copied to `CTP2_LOGTO`, so that a line sent to `TCP:` leaves the machine before it can die (50 is enough on a PiStorm's wifi) |
+| `CTP2_TRACE` | `1`: trace lines (`T file:line`) for a machine that dies without a guru: the F4 quick start, the UI passes after it, the progress window, each step of a new world (map plugins, terrain levels, continents, player starts) |
 
 ## Source map
 
