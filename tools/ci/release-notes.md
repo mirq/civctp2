@@ -11,6 +11,15 @@ Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS), MorphOS and ARO
 | CTP2-Linux-x86_64-@VERSION@.tar.gz | Linux (SDL2) build |
 | SHA256SUMS.txt | Checksums |
 
+## New in 0.8
+
+- **A new game no longer resets fast machines (PiStorm, Emu68)** - and no longer starts with the wrong settings anywhere. On a new install the launcher wrote a `userprofile.txt` with only the autosave setting in it; the game then took that file instead of its default settings, so the map generators were missing (a new game built its world from uninitialised memory: a reset on a PiStorm, at "Progress 440" or after F4), the computer players were off and there were three players. The launcher now starts the file from the game's defaults, and the game repairs a profile written that way by itself (its own settings for the screen size and autosave are kept). Thanks to the PiStorm users who kept reporting it.
+- **WarpOS on a PCI PowerPC card (Sonnet):** the mouse no longer faults, and leaving a game for the main menu no longer stops with a Data Storage fault.
+- **One save format** for the 68060, WarpOS and MorphOS versions: a game saved on one loads on the others.
+- Settings changed in the game (and the language) are kept after Quit.
+- The domestic and science windows built ahead of time (`CTP2_UIPRELOAD`) no longer come up by themselves, empty.
+- For bug reports from machines that reset: `CTP2_LOGTO` sends the log to a path that survives a reset (a serial console, or the network with `TCP:<pc>/<port>`), `CTP2_LOGDELAY` and `CTP2_TRACE` (see `README-Amiga.md`).
+
 ## New in 0.7
 
 - **AI turns faster again, the same AI.** A route search now checks once per search, not for every map cell, whether the moving army is a civilian one and how it measures up against armies next to its path. On a real A4000 (68060), a late-game round (turn 191, six computer players, enemy moves not shown) takes 126.5 s, against 133.7 s in 0.6 and 144.1 s in 0.5. The computer players still make exactly the same moves (checked save against save).
