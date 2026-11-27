@@ -11,6 +11,10 @@ Call to Power II (Apolyton Edition) for AmigaOS (68060, WarpOS), MorphOS and ARO
 | CTP2-Linux-x86_64-@VERSION@.tar.gz | Linux (SDL2) build |
 | SHA256SUMS.txt | Checksums |
 
+## New in 0.10
+
+- **No more freeze on a black Battle View** (seen in the 68060 version, when barbarians attacked a city). Battle View sorts the units to decide the order in which it draws them, and the sort never reported two units as equal. With the 68060 C library, some battles with two or more units on one side then ran past the end of the list and the game froze before drawing anything. This bug comes from the original game code. Saved games work as they are: load the save from before the battle with the new version. Thanks to **twardy** for reporting it and for providing the save file that showed the problem.
+
 ## New in 0.9
 
 - **Cities no longer starve on a Workbench set to Polish, German or another country that writes numbers with a decimal comma** (68060 and MorphOS versions). The C library took the comma from the system's Locale settings and then read the game's data, which is written with a point, wrongly: "0.85" became 0. Every government's food, production and gold factors were 0, so the city screens showed food, production and gold as 0 and the cities starved, whatever the farmers did. The game now always reads and writes numbers with a point. Until you update: set the country to United Kingdom or USA in Locale prefs, or use the WarpOS version, which was never affected. Thanks to **fazior** and **twardy** for reporting it.

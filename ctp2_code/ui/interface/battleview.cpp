@@ -226,8 +226,10 @@ int battleview_AttackerSort( const void *arg1, const void *arg2 )
 	if (sa1->y == sa2->y) {
 		if (sa1->x > sa2->x)
 			return -1;
-		else
+		else if (sa1->x < sa2->x)
 			return 1;
+		else
+			return 0;	// qsort may compare an element with itself
 	} else
 		return 1;
 }
@@ -262,8 +264,10 @@ int battleview_DefenderSort( const void *arg1, const void *arg2 )
 	} else if(sa1->x == sa2->x) {
 		if(sa1->y < sa2->y) {
 			return -1;
-		} else {
+		} else if(sa1->y > sa2->y) {
 			return 1;
+		} else {
+			return 0;	// qsort may compare an element with itself
 		}
 	} else {
 		return -1;
